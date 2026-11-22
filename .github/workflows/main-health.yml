@@ -12,6 +12,8 @@
 #     with:
 #       devloop: git+https://github.com/Jon-275/dev-loop@<tag>
 #       needs: ${{ toJSON(needs) }}
+#     secrets:
+#       devloop_token: ${{ secrets.DEVLOOP_TOKEN }}  # dev-loop is private
 name: main health
 
 on:
@@ -25,6 +27,10 @@ on:
         description: toJSON(needs) from the calling job
         required: true
         type: string
+    secrets:
+      devloop_token:
+        description: A read-only token for the private dev-loop repository, to install devloop
+        required: false
 
 permissions:
   contents: read
@@ -47,7 +53,15 @@ jobs:
       - name: Install devloop
         env:
           DEVLOOP: ${{ inputs.devloop }}
-        run: uv tool install "$DEVLOOP"
+          DEVLOOP_TOKEN: ${{ secrets.devloop_token }}
+        run: |
+          # With a token, git may read the private dev-loop repository, only while uv installs.
+          base="https://x-access-token:${DEVLOOP_TOKEN}@github.com/Jon-275/dev-loop"
+          if [ -n "$DEVLOOP_TOKEN" ]; then
+            trap 'git config --global --remove-section "url.$base" 2>/dev/null || true' EXIT
+            git config --global "url.$base.insteadOf" https://github.com/Jon-275/dev-loop
+          fi
+          uv tool install "$DEVLOOP"
       - name: Open, update or close the issue
         env:
           GH_TOKEN: ${{ github.token }}

@@ -1,6 +1,8 @@
 """The shared workflows: pinned actions, least privilege, and the jobs main-health waits on."""
 
+import os
 import re
+import subprocess
 from pathlib import Path
 from typing import Any
 
@@ -117,3 +119,75 @@ def test_main_pushes_never_cancel_each_other() -> None:
     assert "github.event.action }}" not in concurrency["group"]
     assert "'labeled' || github.event.action == 'unlabeled') && '-label'" in concurrency["group"]
     assert concurrency["cancel-in-progress"] == "${{ github.event_name == 'pull_request' }}"
+
+
+def _install_steps() -> list[dict[str, Any]]:
+    steps = [*_steps(WORKFLOWS / "pr-hygiene.yml"), *_steps(WORKFLOWS / "main-health.yml")]
+    return [step for step in steps if step.get("name") == "Install devloop"]
+
+
+@pytest.mark.parametrize("name", ["pr-hygiene.yml", "main-health.yml"])
+def test_the_shared_workflows_take_an_optional_token_to_install_devloop(name: str) -> None:
+    secret = _on(_load(name))["workflow_call"]["secrets"]["devloop_token"]
+    assert secret["required"] is False
+
+
+def test_every_install_step_is_the_same_and_reads_the_token_from_the_secret() -> None:
+    steps = _install_steps()
+    assert len(steps) == 5
+    assert all(step == steps[0] for step in steps)
+    assert steps[0]["env"] == {
+        "DEVLOOP": "${{ inputs.devloop }}",
+        "DEVLOOP_TOKEN": "${{ secrets.devloop_token }}",
+    }
+
+
+@pytest.mark.parametrize("token", ["", "ghp_example"])
+def test_the_token_is_used_only_while_devloop_installs(tmp_path: Path, token: str) -> None:
+    script = _install_steps()[0]["run"]
+    bin_dir = tmp_path / "bin"
+    bin_dir.mkdir()
+    seen = tmp_path / "seen.txt"
+    uv = bin_dir / "uv"  # records the git config uv's install would see
+    uv.write_text(f'#!/bin/sh\ngit config --global --get-regexp "^url" > "{seen}" || true\n')
+    uv.chmod(0o755)
+    env = {
+        "PATH": f"{bin_dir}{os.pathsep}{os.environ['PATH']}",
+        "HOME": str(tmp_path),
+        "GIT_CONFIG_NOSYSTEM": "1",
+        "DEVLOOP": "git+https://github.com/Jon-275/dev-loop@v0.2.0",
+        "DEVLOOP_TOKEN": token,
+    }
+    subprocess.run(["bash", "-e", "-c", script], env=env, check=True)
+    during = seen.read_text(encoding="utf-8")
+    if token:
+        assert f"https://x-access-token:{token}@github.com/Jon-275/dev-loop" in during
+    else:
+        assert during == ""
+    after = subprocess.run(
+        ["git", "config", "--global", "--get-regexp", "^url"], env=env, capture_output=True
+    )
+    assert after.stdout == b""
+
+
+def test_dev_loop_installs_itself_without_a_token() -> None:
+    jobs = _load("ci.yml")["jobs"]
+    assert "secrets" not in jobs["hygiene"] and "secrets" not in jobs["main-health"]
+
+
+def test_the_token_is_removed_even_when_the_install_fails(tmp_path: Path) -> None:
+    bin_dir = tmp_path / "bin"
+    bin_dir.mkdir()
+    (bin_dir / "uv").write_text("#!/bin/sh\nexit 1\n")
+    (bin_dir / "uv").chmod(0o755)
+    env = {
+        "PATH": f"{bin_dir}{os.pathsep}{os.environ['PATH']}",
+        "HOME": str(tmp_path),
+        "GIT_CONFIG_NOSYSTEM": "1",
+        "DEVLOOP": "git+https://github.com/Jon-275/dev-loop@v0.2.0",
+        "DEVLOOP_TOKEN": "ghp_example",
+    }
+    done = subprocess.run(["bash", "-e", "-c", _install_steps()[0]["run"]], env=env)
+    assert done.returncode != 0
+    left = subprocess.run(["git", "config", "--global", "--list"], env=env, capture_output=True)
+    assert b"ghp_example" not in left.stdout

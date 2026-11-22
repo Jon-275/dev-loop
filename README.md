@@ -53,6 +53,17 @@ Two shared workflows run the checks, so every project's CI calls the same code:
 Each file's header shows the job to copy. [dev-loop's own CI](.github/workflows/ci.yml)
 calls both.
 
+dev-loop is private. To use it from another of your repositories:
+
+1. Create a fine-grained personal access token: **Repository access** only
+   `Jon-275/dev-loop`, **Permissions** only *Contents: Read-only*.
+2. Add it to the calling repository as the Actions secret `DEVLOOP_TOKEN`.
+3. Pass it to both workflows as `devloop_token`, as each header shows.
+
+The token is used only while devloop installs and is removed from the runner's git
+config straight after. Pull requests from forks get no secrets, so these jobs fail for
+them.
+
 ## What `init` writes
 
 | File | Purpose |

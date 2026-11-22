@@ -10,6 +10,8 @@
 #       pull-requests: read
 #     with:
 #       devloop: git+https://github.com/Jon-275/dev-loop@<tag>
+#     secrets:
+#       devloop_token: ${{ secrets.DEVLOOP_TOKEN }}  # dev-loop is private
 #
 # Outputs: `code` is "false" only for a pull request that changes nothing but
 # documentation; `doc_tests` names the tests a docs-only change must still run.
@@ -22,6 +24,10 @@ on:
         description: Where to install devloop from (a uv requirement, or . in dev-loop itself)
         required: true
         type: string
+    secrets:
+      devloop_token:
+        description: A read-only token for the private dev-loop repository, to install devloop
+        required: false
     outputs:
       code:
         description: '"false" only when the pull request changes nothing but documentation'
@@ -53,7 +59,15 @@ jobs:
       - name: Install devloop
         env:
           DEVLOOP: ${{ inputs.devloop }}
-        run: uv tool install "$DEVLOOP"
+          DEVLOOP_TOKEN: ${{ secrets.devloop_token }}
+        run: |
+          # With a token, git may read the private dev-loop repository, only while uv installs.
+          base="https://x-access-token:${DEVLOOP_TOKEN}@github.com/Jon-275/dev-loop"
+          if [ -n "$DEVLOOP_TOKEN" ]; then
+            trap 'git config --global --remove-section "url.$base" 2>/dev/null || true' EXIT
+            git config --global "url.$base.insteadOf" https://github.com/Jon-275/dev-loop
+          fi
+          uv tool install "$DEVLOOP"
       - id: changes
         run: devloop changes --event "$GITHUB_EVENT_NAME"
 
@@ -73,7 +87,15 @@ jobs:
       - name: Install devloop
         env:
           DEVLOOP: ${{ inputs.devloop }}
-        run: uv tool install "$DEVLOOP"
+          DEVLOOP_TOKEN: ${{ secrets.devloop_token }}
+        run: |
+          # With a token, git may read the private dev-loop repository, only while uv installs.
+          base="https://x-access-token:${DEVLOOP_TOKEN}@github.com/Jon-275/dev-loop"
+          if [ -n "$DEVLOOP_TOKEN" ]; then
+            trap 'git config --global --remove-section "url.$base" 2>/dev/null || true' EXIT
+            git config --global "url.$base.insteadOf" https://github.com/Jon-275/dev-loop
+          fi
+          uv tool install "$DEVLOOP"
       - run: devloop doctor --check
 
   # Advisory: fails a pull request over pr.max_lines unless it has pr.large_label. It
@@ -97,7 +119,15 @@ jobs:
       - name: Install devloop
         env:
           DEVLOOP: ${{ inputs.devloop }}
-        run: uv tool install "$DEVLOOP"
+          DEVLOOP_TOKEN: ${{ secrets.devloop_token }}
+        run: |
+          # With a token, git may read the private dev-loop repository, only while uv installs.
+          base="https://x-access-token:${DEVLOOP_TOKEN}@github.com/Jon-275/dev-loop"
+          if [ -n "$DEVLOOP_TOKEN" ]; then
+            trap 'git config --global --remove-section "url.$base" 2>/dev/null || true' EXIT
+            git config --global "url.$base.insteadOf" https://github.com/Jon-275/dev-loop
+          fi
+          uv tool install "$DEVLOOP"
       - name: Measure the pull request
         env:
           GITHUB_TOKEN: ${{ github.token }}
@@ -122,5 +152,13 @@ jobs:
       - name: Install devloop
         env:
           DEVLOOP: ${{ inputs.devloop }}
-        run: uv tool install "$DEVLOOP"
+          DEVLOOP_TOKEN: ${{ secrets.devloop_token }}
+        run: |
+          # With a token, git may read the private dev-loop repository, only while uv installs.
+          base="https://x-access-token:${DEVLOOP_TOKEN}@github.com/Jon-275/dev-loop"
+          if [ -n "$DEVLOOP_TOKEN" ]; then
+            trap 'git config --global --remove-section "url.$base" 2>/dev/null || true' EXIT
+            git config --global "url.$base.insteadOf" https://github.com/Jon-275/dev-loop
+          fi
+          uv tool install "$DEVLOOP"
       - run: devloop changelog check --pr
