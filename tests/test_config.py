@@ -4,7 +4,7 @@ from pathlib import Path
 
 import pytest
 
-from devloop.config import Config, ConfigError, load_config, parse_config
+from devloop.config import Config, ConfigError, ExcludeBlock, load_config, parse_config
 
 FULL = """
 [framework]
@@ -13,6 +13,7 @@ version = "0.1"
 [pr]
 max_lines = 800
 exclude = ["uv.lock", "data/*.json"]
+exclude_blocks = [{ path = "AGENTS.md", start = "<!-- a -->", end = "<!-- b -->" }]
 large_label = "large-pr-approved"
 
 [tiers]
@@ -47,6 +48,7 @@ def test_full_config_round_trips_every_section() -> None:
     assert cfg.framework.version == "0.1"
     assert cfg.pr.max_lines == 800
     assert cfg.pr.exclude == ("uv.lock", "data/*.json")
+    assert cfg.pr.exclude_blocks == (ExcludeBlock("AGENTS.md", "<!-- a -->", "<!-- b -->"),)
     assert cfg.tiers == {1: ("src/**/crm_*.py",), 3: ("docs/**", "*.md")}
     assert cfg.review.providers[1] == ("greptile", "gemini")
     assert cfg.review.blocking_severities == ("P1", "P2")
@@ -90,6 +92,16 @@ def test_framework_version_is_required() -> None:
         ('[framework]\nversion = "0.1"\n[council]\nmax_reviewers = { 1 = -1 }\n', r"max_reviewers"),
         ('[framework]\nversion = "0.1"\n[council]\nrequire_status = [7]\n', r"require_status"),
         ('[framework]\nversion = "0.1"\n[labels]\nprefixes = ["ok:"]\n', r"prefixes"),
+        ('[framework]\nversion = "0.1"\n[pr]\nexclude_blocks = "x"\n', r"exclude_blocks"),
+        (
+            '[framework]\nversion = "0.1"\n[pr]\nexclude_blocks = [{ path = "a" }]\n',
+            r"exclude_blocks\[0\]",
+        ),
+        (
+            '[framework]\nversion = "0.1"\n[pr]\n'
+            'exclude_blocks = [{ path = "../a", start = "s", end = "e" }]\n',
+            r"inside",
+        ),
         ("not = [toml", r"not valid TOML"),
     ],
 )

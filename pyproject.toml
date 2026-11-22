@@ -28,6 +28,7 @@ packages = ["src/devloop"]
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 addopts = "-q --import-mode=importlib"
+pythonpath = ["tests"]
 
 [tool.ruff]
 line-length = 100
@@ -44,3 +45,4 @@ ignore = ["D203", "D213"]
 python_version = "3.12"
 strict = true
 files = ["src", "tests"]
+mypy_path = ["tests"]
