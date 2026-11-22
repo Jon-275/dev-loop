@@ -2,17 +2,30 @@ name: CI
 
 on:
   pull_request:
+    # labeled and unlabeled re-run the size check when pr.large_label is added or removed.
+    types: [opened, synchronize, reopened, labeled, unlabeled]
   push:
     branches: [main]
 
 permissions:
   contents: read
 
+# Pull request runs replace each other; every push to main keeps its own run. Label
+# changes share a group of their own, so they never cancel a run checking the code.
+concurrency:
+  group: ci-${{ github.event_name == 'push' && github.sha || github.ref }}${{ (github.event.action == 'labeled' || github.event.action == 'unlabeled') && '-label' || '' }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 jobs:
   check:
-    runs-on: ubuntu-latest
+    # A label change does not change the code, so the code's own run stands.
+    if: ${{ github.event.action != 'labeled' && github.event.action != 'unlabeled' }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
       - uses: astral-sh/setup-uv@1db35dd8eee11c5894872e0b383ae6c406cf738d # v10.4.0
         with:
           python-version: "3.12"
@@ -21,5 +34,23 @@ jobs:
       - run: .venv/bin/ruff format --check .
       - run: .venv/bin/mypy
       - run: .venv/bin/python -m pytest
-      - name: devloop's own layout has not drifted
-        run: .venv/bin/devloop doctor --check
+
+  # dev-loop runs its own shared workflows, installing devloop from this checkout.
+  hygiene:
+    uses: ./.github/workflows/pr-hygiene.yml
+    permissions:
+      contents: read
+      pull-requests: read
+    with:
+      devloop: .
+
+  main-health:
+    needs: [check, hygiene]
+    if: ${{ always() && github.event_name == 'push' && github.ref == 'refs/heads/main' }}
+    uses: ./.github/workflows/main-health.yml
+    permissions:
+      contents: read
+      issues: write
+    with:
+      devloop: .
+      needs: ${{ toJSON(needs) }}

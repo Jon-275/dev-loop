@@ -1,0 +1,60 @@
+# Keeps one "main is red: <workflow>" issue per workflow, shared by every project that
+# uses devloop. Call it as the caller's last job, after every other job, on every push
+# to main, whatever the other jobs did:
+#
+#   main-health:
+#     needs: [<every other job>]
+#     if: ${{ always() && github.event_name == 'push' && github.ref == 'refs/heads/main' }}
+#     uses: Jon-275/dev-loop/.github/workflows/main-health.yml@<tag>
+#     permissions:
+#       contents: read
+#       issues: write
+#     with:
+#       devloop: git+https://github.com/Jon-275/dev-loop@<tag>
+#       needs: ${{ toJSON(needs) }}
+name: main health
+
+on:
+  workflow_call:
+    inputs:
+      devloop:
+        description: Where to install devloop from (a uv requirement, or . in dev-loop itself)
+        required: true
+        type: string
+      needs:
+        description: toJSON(needs) from the calling job
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  report:
+    name: Report main's state
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      issues: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@1db35dd8eee11c5894872e0b383ae6c406cf738d # v10.4.0
+        with:
+          python-version: "3.12"
+      - name: Install devloop
+        env:
+          DEVLOOP: ${{ inputs.devloop }}
+        run: uv tool install "$DEVLOOP"
+      - name: Open, update or close the issue
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          NEEDS: ${{ inputs.needs }}
+          WORKFLOW: ${{ github.workflow }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: >-
+          devloop main-health --workflow "$WORKFLOW" --sha "$GITHUB_SHA"
+          --run-url "$RUN_URL" --needs "$NEEDS"
