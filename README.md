@@ -34,6 +34,8 @@ devloop doctor --check    # check nothing has drifted; run this in CI
   them to `CHANGELOG.md` (see [changes/README.md](changes/README.md)).
 - `devloop changes`: in CI, say whether a pull request changes only documentation, so
   the code checks can be skipped.
+- `devloop pr-open [branch ...]`: refuse to push to a branch whose pull request has
+  already merged or closed. Set `ALLOW_PUSH_TO_FINISHED_PR=1` to push anyway.
 
 ## What `init` writes
 

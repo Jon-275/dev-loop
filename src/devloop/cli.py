@@ -13,7 +13,7 @@ import sys
 from collections.abc import Sequence
 from pathlib import Path
 
-from devloop import changelog, changes
+from devloop import changelog, changes, pr_open
 from devloop.config import CONFIG_FILE, ConfigError, load_config
 from devloop.doctor import diagnose
 from devloop.init import init
@@ -34,6 +34,7 @@ def _parser() -> argparse.ArgumentParser:
         ("size", "in CI, report a pull request's size and fail one over pr.max_lines"),
         ("changelog", "check changelog fragments, or build them into the changelog"),
         ("changes", "in CI, say whether a pull request changes only documentation"),
+        ("pr-open", "refuse a push to a branch whose PR already merged or closed"),
     ):
         sub = commands.add_parser(name, help=text)
         sub.add_argument("--root", type=Path, default=Path.cwd(), help="project root")
@@ -135,6 +136,9 @@ def _report(changes: list[Change]) -> None:
 
 def main(argv: Sequence[str] | None = None) -> int:
     """Run the command line and return its exit code."""
+    argv = list(sys.argv[1:] if argv is None else argv)
+    if argv[:1] == ["pr-open"]:  # the guard parses its own arguments
+        return pr_open.main(argv[1:])
     args = _parser().parse_args(argv)
     root: Path = args.root.resolve()
     try:
