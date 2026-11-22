@@ -7,13 +7,14 @@ Exit codes: 0 success (or a report without ``--check``), 1 doctor found problems
 from __future__ import annotations
 
 import argparse
+import json
 import os
 import subprocess
 import sys
 from collections.abc import Sequence
 from pathlib import Path
 
-from devloop import changelog, changes, pr_open
+from devloop import changelog, changes, main_health, pr_open
 from devloop.config import CONFIG_FILE, ConfigError, load_config
 from devloop.doctor import diagnose
 from devloop.init import init
@@ -35,6 +36,7 @@ def _parser() -> argparse.ArgumentParser:
         ("changelog", "check changelog fragments, or build them into the changelog"),
         ("changes", "in CI, say whether a pull request changes only documentation"),
         ("pr-open", "refuse a push to a branch whose PR already merged or closed"),
+        ("main-health", "on a push to main, open or close the workflow's 'main is red' issue"),
     ):
         sub = commands.add_parser(name, help=text)
         sub.add_argument("--root", type=Path, default=Path.cwd(), help="project root")
@@ -43,6 +45,11 @@ def _parser() -> argparse.ArgumentParser:
         if name in ("size", "changes"):
             event = os.environ.get("GITHUB_EVENT_NAME", "")
             sub.add_argument("--event", default=event, help="github.event_name")
+        if name == "main-health":
+            sub.add_argument("--workflow", required=True, help="the workflow's name")
+            sub.add_argument("--sha", required=True, help="the commit the run tested")
+            sub.add_argument("--run-url", required=True, help="the run's URL")
+            sub.add_argument("--needs", required=True, help="toJSON(needs)")
         if name == "changelog":
             actions = sub.add_subparsers(dest="action", required=True)
             check = actions.add_parser("check", help="validate the fragments")
@@ -50,6 +57,33 @@ def _parser() -> argparse.ArgumentParser:
             build = actions.add_parser("build", help="move the fragments into the changelog")
             build.add_argument("--dry-run", action="store_true", help="print, write nothing")
     return parser
+
+
+def _main_health(args: argparse.Namespace) -> int:
+    """Bring the workflow's main-red issue in line with this run."""
+    try:
+        needs = json.loads(args.needs)
+    except ValueError:
+        needs = None
+    if (
+        not isinstance(needs, dict)
+        or not needs
+        or not all(isinstance(job, dict) for job in needs.values())
+    ):
+        print(
+            "devloop: --needs has no job results; list the workflow's jobs in needs",
+            file=sys.stderr,
+        )
+        return 2
+    try:
+        done = main_health.report(main_health.run_gh, args.workflow, args.sha, args.run_url, needs)
+    except subprocess.CalledProcessError as exc:
+        reason = (exc.stderr or "").strip().splitlines()
+        command = " ".join(exc.cmd[:2]) if isinstance(exc.cmd, list) else "gh"
+        print(f"devloop: {command} failed: {reason[0] if reason else exc}", file=sys.stderr)
+        return 2
+    print(f"{args.workflow} at {args.sha[:12]}: {done}")
+    return 0
 
 
 def _changes(args: argparse.Namespace, root: Path) -> int:
@@ -152,6 +186,8 @@ def main(argv: Sequence[str] | None = None) -> int:
             return _changelog(args, root)
         elif args.command == "changes":
             return _changes(args, root)
+        elif args.command == "main-health":
+            return _main_health(args)
         else:
             problems = diagnose(root)
             for problem in problems:
