@@ -34,7 +34,12 @@ project's own text, which devloop never touches.
 ## Working alongside other agents
 
 - One worktree per task, and one writer per set of files.
-- Plan stacked PRs up front.
+- Plan stacked PRs up front. When merging one:
+  - merge with a merge commit, not a squash, so the next PR needs no rebase;
+  - first move the next PR's base to `main` (`gh pr edit <next> --base main`), and only
+    then delete the merged branch: deleting a PR's base branch closes that PR;
+  - rebase a PR or merge `main` into it only when GitHub reports a conflict or `main`
+    changed code it depends on, since every push re-runs CI and every reviewer.
 - Leave a hand-off note per branch in `.devloop/notes/<branch>.md` (never committed).
 <!-- devloop:end coordination -->
 
