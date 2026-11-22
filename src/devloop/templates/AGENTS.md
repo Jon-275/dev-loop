@@ -10,6 +10,8 @@ project's own text, which devloop never touches.
 
 - **Enforced in CI, not by the agent.** Git hooks and CI are the gate for every rule that
   must hold; instructions here explain them. A failing gate is fixed, never bypassed.
+- **Keep it simple.** Write clear, concise code, docs and messages in plain language.
+  Prefer the simplest change that works.
 - **Tests first.** Every fix comes with a test that fails when the fix is reverted.
 - **Small PRs.** One concern per PR, about $max_lines changed lines or fewer (generated and
   lock files excluded). Split larger work into a stack of PRs that each merge on their own;

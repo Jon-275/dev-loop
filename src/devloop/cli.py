@@ -20,7 +20,7 @@ from devloop.sync import Change, SyncError, apply
 def _parser() -> argparse.ArgumentParser:
     """Build the argument parser."""
     parser = argparse.ArgumentParser(
-        prog="devloop", description="One review and delivery loop for every coding agent."
+        prog="devloop", description="A standard review and delivery loop across coding agents."
     )
     commands = parser.add_subparsers(dest="command", required=True)
     for name, text in (
