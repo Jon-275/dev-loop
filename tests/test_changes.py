@@ -94,3 +94,12 @@ def test_the_command_writes_code_and_doc_tests_to_the_output(
     monkeypatch.setenv("GITHUB_OUTPUT", str(out))
     assert main(["changes", "--root", str(repo), "--event", "pull_request"]) == 0
     assert out.read_text(encoding="utf-8") == "code=false\ndoc_tests=tests/test_readme.py\n"
+
+
+def test_skill_folders_are_code_not_documentation(merge_repo: MergeRepo) -> None:
+    skills = ("devloop/skills", ".claude/skills")
+    assert not docs_only(["devloop/skills/s/SKILL.md"], DOCS, skills)
+    assert not docs_only([".claude/skills/s/SKILL.md", "README.md"], DOCS, skills)
+    assert docs_only(["docs/skills.md"], DOCS, skills)
+    repo = merge_repo({"devloop/skills/s/SKILL.md": "x\n"})
+    assert decide("pull_request", repo, DOCS, skills)[0]

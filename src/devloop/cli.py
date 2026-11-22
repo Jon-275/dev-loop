@@ -53,8 +53,10 @@ def _parser() -> argparse.ArgumentParser:
 
 def _changes(args: argparse.Namespace, root: Path) -> int:
     """Write ``code`` and ``doc_tests`` for GitHub Actions; always exits 0."""
-    docs = load_config(root / CONFIG_FILE).docs
-    code, files = changes.decide(args.event, root, docs)
+    config = load_config(root / CONFIG_FILE)
+    docs = config.docs
+    skills = (config.skills.project, *config.agents.skills_targets)
+    code, files = changes.decide(args.event, root, docs, skills)
     tests = [] if code else changes.doc_tests(root, docs)
     if code:
         print("Code changed (or the change could not be read): every check runs.")
