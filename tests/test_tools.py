@@ -28,3 +28,19 @@ def test_config_default_targets_match_the_registry() -> None:
 
 def test_a_single_tool_needs_only_its_own_folder() -> None:
     assert default_skills_targets(("codex",)) == (".agents/skills",)
+
+
+def test_antigravity_reads_agents_md_and_the_shared_skills_folder() -> None:
+    tool = TOOLS["antigravity"]
+    assert tool.reads_agents_md
+    assert tool.adapter is None
+    assert tool.skills_dirs == (".agents/skills",)
+
+
+def test_antigravity_needs_no_extra_skills_folder() -> None:
+    assert "antigravity" in Agents().tools
+    assert default_skills_targets(Agents().tools) == (
+        ".claude/skills",
+        ".agents/skills",
+        ".github/skills",
+    )

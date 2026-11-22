@@ -10,7 +10,7 @@ from devloop.cli import main
 from devloop.doctor import diagnose
 from devloop.init import init
 
-FIVE = ("claude", "codex", "gemini", "cursor", "copilot")
+TOOLS = ("claude", "codex", "gemini", "antigravity", "cursor", "copilot")
 
 
 def _git_repo(path: Path) -> Path:
@@ -18,13 +18,13 @@ def _git_repo(path: Path) -> Path:
     return path
 
 
-def test_init_on_an_empty_repo_is_doctor_clean_for_all_five_tools(tmp_path: Path) -> None:
+def test_init_on_an_empty_repo_is_doctor_clean_for_every_tool(tmp_path: Path) -> None:
     root = _git_repo(tmp_path / "repo")
     assert main(["init", "--root", str(root)]) == 0
     assert diagnose(root) == []
     assert main(["doctor", "--check", "--root", str(root)]) == 0
     text = (root / "devloop.toml").read_text(encoding="utf-8")
-    for tool in FIVE:
+    for tool in TOOLS:
         assert f'"{tool}"' in text
 
 

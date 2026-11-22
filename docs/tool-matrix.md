@@ -10,11 +10,12 @@ fast: re-check on every release.
 | Claude Code | Only when no `CLAUDE.md` exists | `CLAUDE.md` containing `@AGENTS.md` | `.claude/skills` |
 | Codex | Yes | none | `.agents/skills` |
 | Gemini CLI | Only when `context.fileName` names it | `.gemini/settings.json` with `context.fileName` | `.agents/skills` (alias of `.gemini/skills`) |
+| Antigravity CLI | Yes (and `GEMINI.md`) | none | `.agents/skills` |
 | Cursor | Yes | none | `.agents/skills` (also reads `.cursor/skills`, `.claude/skills`) |
 | GitHub Copilot | Yes (cloud agent, CLI, code review) | none | `.github/skills` |
 
 So the default `skills_targets` are `.claude/skills`, `.agents/skills` and
-`.github/skills`: the fewest folders that serve all five tools.
+`.github/skills`: the fewest folders that serve every supported tool.
 
 ## Notes
 
@@ -23,8 +24,12 @@ So the default `skills_targets` are `.claude/skills`, `.agents/skills` and
 - **Gemini CLI.** The settings key is nested, `context.fileName`, not the older top-level
   `contextFileName`; it may be a list. devloop adds `AGENTS.md` and keeps the other names
   (default `GEMINI.md`) and every other setting. Gemini CLI was replaced by Antigravity
-  CLI on 2026-06-18; Antigravity reads `AGENTS.md` and `.agents/skills` natively, so the
-  same layout serves it. It is not yet a separate entry in `agents.tools`.
+  CLI on 2026-06-18.
+- **Antigravity CLI** (`agy`, tool name `antigravity`). Reads `AGENTS.md` and `GEMINI.md`
+  natively in the workspace and each parent up to the repository root, so it needs no
+  adapter. Workspace skills come only from `.agents/skills`: a project's `.gemini/skills`
+  must be renamed. Its docs do not say whether it honours `.gemini/settings.json`, which
+  devloop writes for Gemini CLI only.
 - **Copilot.** The cloud agent and CLI also read `.agents/skills` and `.claude/skills`,
   but Copilot in VS Code reads only `.github/skills`, so devloop requires that folder.
 - **Duplicates.** Cursor and the Copilot cloud agent read more than one of the default
@@ -41,6 +46,9 @@ So the default `skills_targets` are `.claude/skills`, `.agents/skills` and
   <https://learn.chatgpt.com/docs/build-skills>
 - Gemini CLI: <https://geminicli.com/docs/cli/gemini-md/>,
   <https://geminicli.com/docs/cli/skills/>,
+  <https://antigravity.google/docs/cli/gcli-migration.md>
+- Antigravity CLI: <https://antigravity.google/docs/rules>,
+  <https://antigravity.google/docs/skills>,
   <https://antigravity.google/docs/cli/gcli-migration.md>
 - Cursor: <https://cursor.com/docs/context/rules>, <https://cursor.com/docs/context/skills>
 - GitHub Copilot: <https://docs.github.com/en/copilot/reference/custom-instructions-support>,
