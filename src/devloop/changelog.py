@@ -56,7 +56,9 @@ def check(root: Path, log: Changelog) -> list[str]:
     errors: list[str] = []
     for path in fragment_files(root, log):
         match = NAME.match(path.name)
-        if match is None:
+        if path.is_symlink():  # a symlink could pull any file's text into the changelog
+            errors.append(f"{path.name}: is a symlink; a fragment must be a file")
+        elif match is None:
             errors.append(f"{path.name}: name must be <slug>.<section>.md (lower-case slug)")
         elif match["section"] not in log.sections:
             errors.append(

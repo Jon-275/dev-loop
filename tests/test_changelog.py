@@ -44,6 +44,7 @@ Read these first.
 
 
 def _repo(tmp_path: Path, fragments: dict[str, str]) -> Path:
+    tmp_path.mkdir(parents=True, exist_ok=True)
     """Write a project with a changelog and ``fragments`` (name: text)."""
     (tmp_path / "devloop.toml").write_text('[framework]\nversion = "0.1"\n', encoding="utf-8")
     (tmp_path / "CHANGELOG.md").write_text(CHANGELOG, encoding="utf-8")
@@ -210,3 +211,14 @@ def test_an_unreadable_change_skips_the_note_and_passes(
     monkeypatch.setattr(subprocess, "run", broken)
     assert main(["changelog", "--root", str(root), "check", "--pr"]) == 0
     assert "cannot read the change" in capsys.readouterr().out
+
+
+def test_a_symlinked_fragment_is_refused_and_never_read(tmp_path: Path) -> None:
+    secret = tmp_path / "secret.txt"
+    secret.write_text("- private\n", encoding="utf-8")
+    root = _repo(tmp_path / "p", {})
+    (root / "changes" / "x.added.md").symlink_to(secret)
+    assert changelog.check(root, LOG) == ["x.added.md: is a symlink; a fragment must be a file"]
+    with pytest.raises(ValueError, match="symlink"):
+        changelog.build(root, LOG)
+    assert "private" not in _log(root)
