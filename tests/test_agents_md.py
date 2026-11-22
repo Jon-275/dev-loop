@@ -87,3 +87,10 @@ def test_markers_inside_code_fences_are_examples_not_blocks() -> None:
     assert parse_blocks(doc) == {"rules": "old rules\n"}
     out = apply_blocks(doc, {"rules": "new\n"})
     assert out.startswith("```markdown\n<!-- devloop:begin rules -->\nexample\n")
+
+
+def test_coordination_block_says_how_to_merge_a_stack() -> None:
+    block = render_template(Config.default(version="0.1"))[0]["coordination"]
+    assert "merge commit" in block
+    assert "gh pr edit <next> --base main" in block
+    assert "only when GitHub reports a conflict" in block
