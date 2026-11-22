@@ -16,6 +16,8 @@ dev = [
     "pytest>=8,<10",
     "ruff>=0.17,<1",
     "mypy>=2.4,<3",
+    "pyyaml>=6,<7",
+    "types-pyyaml>=6,<7",
 ]
 
 [build-system]

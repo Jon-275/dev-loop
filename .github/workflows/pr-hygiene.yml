@@ -1,0 +1,126 @@
+# Pull request hygiene, shared by every project that uses devloop.
+#
+# Call it from a workflow that runs on pull_request (with the labeled and unlabeled
+# types, so adding the size label re-runs the size check) and on push to main:
+#
+#   hygiene:
+#     uses: Jon-275/dev-loop/.github/workflows/pr-hygiene.yml@<tag>
+#     permissions:
+#       contents: read
+#       pull-requests: read
+#     with:
+#       devloop: git+https://github.com/Jon-275/dev-loop@<tag>
+#
+# Outputs: `code` is "false" only for a pull request that changes nothing but
+# documentation; `doc_tests` names the tests a docs-only change must still run.
+name: PR hygiene
+
+on:
+  workflow_call:
+    inputs:
+      devloop:
+        description: Where to install devloop from (a uv requirement, or . in dev-loop itself)
+        required: true
+        type: string
+    outputs:
+      code:
+        description: '"false" only when the pull request changes nothing but documentation'
+        value: ${{ jobs.changes.outputs.code }}
+      doc_tests:
+        description: The test files a docs-only change must still run
+        value: ${{ jobs.changes.outputs.doc_tests }}
+
+permissions:
+  contents: read
+
+jobs:
+  # Is this a docs-only pull request? Every doubt says "code", so every check runs.
+  changes:
+    name: Changes
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    outputs:
+      code: ${{ steps.changes.outputs.code }}
+      doc_tests: ${{ steps.changes.outputs.doc_tests }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+          fetch-depth: 2 # the merge ref and its first parent: HEAD^1..HEAD is the PR
+      - uses: astral-sh/setup-uv@1db35dd8eee11c5894872e0b383ae6c406cf738d # v10.4.0
+        with:
+          python-version: "3.12"
+      - name: Install devloop
+        env:
+          DEVLOOP: ${{ inputs.devloop }}
+        run: uv tool install "$DEVLOOP"
+      - id: changes
+        run: devloop changes --event "$GITHUB_EVENT_NAME"
+
+  # The rendered skills, adapters and AGENTS.md blocks match their sources.
+  doctor:
+    name: devloop doctor
+    if: ${{ github.event.action != 'labeled' && github.event.action != 'unlabeled' }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@1db35dd8eee11c5894872e0b383ae6c406cf738d # v10.4.0
+        with:
+          python-version: "3.12"
+      - name: Install devloop
+        env:
+          DEVLOOP: ${{ inputs.devloop }}
+        run: uv tool install "$DEVLOOP"
+      - run: devloop doctor --check
+
+  # Advisory: fails a pull request over pr.max_lines unless it has pr.large_label. It
+  # reads the labels from the API, because a re-run reuses the original event payload.
+  size:
+    name: PR size
+    if: ${{ github.event_name == 'pull_request' }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      pull-requests: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+          fetch-depth: 2
+      - uses: astral-sh/setup-uv@1db35dd8eee11c5894872e0b383ae6c406cf738d # v10.4.0
+        with:
+          python-version: "3.12"
+      - name: Install devloop
+        env:
+          DEVLOOP: ${{ inputs.devloop }}
+        run: uv tool install "$DEVLOOP"
+      - name: Measure the pull request
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: devloop size --event "$GITHUB_EVENT_NAME"
+
+  # Advisory: invalid changelog fragments fail; code with no fragment gets a note.
+  changelog:
+    name: Changelog
+    if: >-
+      ${{ github.event_name == 'pull_request' && github.event.action != 'labeled'
+      && github.event.action != 'unlabeled' }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+          fetch-depth: 2
+      - uses: astral-sh/setup-uv@1db35dd8eee11c5894872e0b383ae6c406cf738d # v10.4.0
+        with:
+          python-version: "3.12"
+      - name: Install devloop
+        env:
+          DEVLOOP: ${{ inputs.devloop }}
+        run: uv tool install "$DEVLOOP"
+      - run: devloop changelog check --pr

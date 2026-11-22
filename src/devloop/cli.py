@@ -1,7 +1,7 @@
 """The ``devloop`` command line.
 
-Exit codes: 0 success (or a report without ``--check``), 1 doctor found problems,
-2 the command could not run (bad configuration or sources).
+Exit codes: 0 success (or a report without ``--check``), 1 a check failed, 2 the
+command could not run (bad configuration or sources).
 """
 
 from __future__ import annotations
