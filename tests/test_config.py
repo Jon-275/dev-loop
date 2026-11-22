@@ -102,6 +102,12 @@ def test_framework_version_is_required() -> None:
             'exclude_blocks = [{ path = "../a", start = "s", end = "e" }]\n',
             r"inside",
         ),
+        ('[framework]\nversion = "0.1"\n[changelog]\nsections = {}\n', r"changelog\.sections"),
+        (
+            '[framework]\nversion = "0.1"\n[changelog]\nsections = { Added = "Added" }\n',
+            r"changelog\.sections\.Added",
+        ),
+        ('[framework]\nversion = "0.1"\n[changelog]\ndir = "../x"\n', r"inside"),
         ("not = [toml", r"not valid TOML"),
     ],
 )
@@ -119,3 +125,14 @@ def test_load_config_reads_the_file(tmp_path: Path) -> None:
 def test_load_config_reports_a_missing_file(tmp_path: Path) -> None:
     with pytest.raises(ConfigError, match="not found"):
         load_config(tmp_path / "devloop.toml")
+
+
+def test_changelog_settings_are_read() -> None:
+    cfg = parse_config(
+        '[framework]\nversion = "0.1"\n[changelog]\ndir = "news"\n'
+        'sections = { added = "New" }\ncode = ["packages/*"]\n'
+    )
+    assert cfg.changelog.dir == "news"
+    assert cfg.changelog.sections == {"added": "New"}
+    assert cfg.changelog.code == ("packages/*",)
+    assert parse_config('[framework]\nversion = "0.1"\n').changelog.file == "CHANGELOG.md"
