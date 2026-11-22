@@ -1,7 +1,7 @@
 # dev-loop
 
 One review and delivery loop for every coding agent. Claude Code, Codex, Gemini CLI,
-Cursor and Copilot all work to the same rules, because those rules come from one source
+Antigravity CLI, Cursor and Copilot all work to the same rules, because those rules come from one source
 and are enforced where no tool can skip them.
 
 ## The four layers
@@ -30,7 +30,7 @@ devloop doctor --check       # exits 0 when nothing has drifted; run it in CI
 | `AGENTS.md` | Managed blocks (rewritten by `devloop sync`) and the project's own sections (never touched) |
 | `CLAUDE.md` | `@AGENTS.md`, so Claude Code loads the same rules |
 | `.gemini/settings.json` | `context.fileName` including `AGENTS.md`, for Gemini CLI |
-| `.claude/skills/`, `.agents/skills/`, `.github/skills/` | Rendered skills: the fewest folders that serve all five tools |
+| `.claude/skills/`, `.agents/skills/`, `.github/skills/` | Rendered skills: the fewest folders that serve every supported tool |
 | `.devloop/manifest.json` | The rendered files, so sync never touches a file it did not write |
 
 Where each tool reads, and the documentation behind it: [docs/tool-matrix.md](docs/tool-matrix.md).

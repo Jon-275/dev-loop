@@ -12,7 +12,7 @@ large_label = "large-pr-approved"
 3 = ["docs/**", "*.md"]
 
 [agents]
-tools = ["claude", "codex", "gemini", "cursor", "copilot"]
+tools = ["claude", "codex", "gemini", "antigravity", "cursor", "copilot"]
 skills_targets = [".claude/skills", ".agents/skills", ".github/skills"]
 
 [skills]

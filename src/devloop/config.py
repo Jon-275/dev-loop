@@ -61,7 +61,7 @@ class Labels:
 class Agents:
     """``[agents]``: the coding agents in use and where rendered skills go."""
 
-    tools: tuple[str, ...] = ("claude", "codex", "gemini", "cursor", "copilot")
+    tools: tuple[str, ...] = ("claude", "codex", "gemini", "antigravity", "cursor", "copilot")
     skills_targets: tuple[str, ...] = (".claude/skills", ".agents/skills", ".github/skills")
 
 

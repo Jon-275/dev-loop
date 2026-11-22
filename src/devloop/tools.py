@@ -52,13 +52,27 @@ TOOLS: dict[str, Tool] = {
             name="gemini",
             title="Gemini CLI",
             # Reads GEMINI.md unless ``context.fileName`` in .gemini/settings.json says
-            # otherwise; its successor, Antigravity CLI, reads AGENTS.md natively.
+            # otherwise. Replaced by Antigravity CLI on 2026-06-18 (entry below).
             reads_agents_md=False,
             adapter=".gemini/settings.json",
             skills_dirs=(".agents/skills", ".gemini/skills"),
             sources=(
                 "https://geminicli.com/docs/cli/gemini-md/",
                 "https://geminicli.com/docs/cli/skills/",
+                "https://antigravity.google/docs/cli/gcli-migration.md",
+            ),
+        ),
+        Tool(
+            name="antigravity",
+            title="Antigravity CLI",
+            # Gemini CLI's successor (command ``agy``) reads AGENTS.md and GEMINI.md
+            # natively, and workspace skills only from .agents/skills (not .gemini/skills).
+            reads_agents_md=True,
+            adapter=None,
+            skills_dirs=(".agents/skills",),
+            sources=(
+                "https://antigravity.google/docs/rules",
+                "https://antigravity.google/docs/skills",
                 "https://antigravity.google/docs/cli/gcli-migration.md",
             ),
         ),
