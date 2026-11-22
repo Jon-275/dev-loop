@@ -271,3 +271,23 @@ def test_the_command_writes_the_step_summary(
     monkeypatch.setenv("GITHUB_EVENT_NAME", "pull_request")
     assert main(["size", "--root", str(repo)]) == 0
     assert summary.read_text(encoding="utf-8").startswith("## PR size\n")
+
+
+def test_a_manifest_entry_outside_the_skills_targets_is_still_counted(
+    merge_repo: MergeRepo,
+) -> None:
+    manifest = json.dumps({"files": ["src/app.py", ".claude/skills/s/SKILL.md"]})
+    repo = merge_repo({"src/app.py": lines(40), ".devloop/manifest.json": manifest})
+    out = _run(repo)[1]
+    assert out[0].startswith("Counted: 40 changed lines")
+
+
+def test_retiring_a_skill_does_not_count_its_deleted_copies(merge_repo: MergeRepo) -> None:
+    copies = [f"{t}/s/SKILL.md" for t in (".claude/skills", ".agents/skills", ".github/skills")]
+    base = {path: lines(300) for path in copies}
+    base["devloop/skills/s/SKILL.md"] = lines(300)
+    base[".devloop/manifest.json"] = json.dumps({"files": copies})
+    changed = {path: "" for path in [*copies, "devloop/skills/s/SKILL.md"]}
+    changed[".devloop/manifest.json"] = json.dumps({"files": []})
+    out = _run(merge_repo(changed, base=base))[1]
+    assert out[0].startswith("Counted: 300 changed lines")

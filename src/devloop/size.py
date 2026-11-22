@@ -78,13 +78,22 @@ def _numstat(root: Path) -> list[FileCount]:
     return counts
 
 
-def _synced(root: Path) -> set[str]:
-    """Return the skill copies the manifest at HEAD lists, plus the manifest itself."""
-    try:
-        files = json.loads(file_at(root, "HEAD", MANIFEST) or '{"files": []}')["files"]
-    except (ValueError, KeyError, TypeError):
-        return set()
-    return {MANIFEST, *(f for f in files if isinstance(f, str))}
+def _synced(root: Path, targets: Sequence[str]) -> set[str]:
+    """Return the skill copies devloop sync wrote, before or after the PR, and the manifest.
+
+    Both manifests count, so retiring a skill does not count its deleted copies. Only
+    entries inside a skills target count, so a manifest cannot hide other files.
+    """
+    synced = {MANIFEST}
+    for revision in ("HEAD^1", "HEAD"):
+        try:
+            files = json.loads(file_at(root, revision, MANIFEST) or '{"files": []}')["files"]
+        except (ValueError, KeyError, TypeError):
+            continue
+        synced.update(
+            f for f in files if isinstance(f, str) and any(f.startswith(f"{t}/") for t in targets)
+        )
+    return synced
 
 
 def _block_lines(text: str, start: str, end: str) -> set[int]:
@@ -149,7 +158,7 @@ def measure(root: Path, config: Config) -> Size | None:
     """Sort the PR's changes into counted and excluded; None when HEAD is not a merge ref."""
     if not is_merge_ref(root):
         return None
-    synced = _synced(root)
+    synced = _synced(root, config.agents.skills_targets)
     blocks = {b.path: b for b in config.pr.exclude_blocks}
     counted: list[FileCount] = []
     excluded: list[FileCount] = []
