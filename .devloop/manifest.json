@@ -1,0 +1,7 @@
+{
+  "files": [
+    ".agents/skills/devloop-setup/SKILL.md",
+    ".claude/skills/devloop-setup/SKILL.md",
+    ".github/skills/devloop-setup/SKILL.md"
+  ]
+}

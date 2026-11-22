@@ -1,0 +1,20 @@
+# devloop configuration: the only place this project differs from the framework.
+
+[framework]
+version = "0.1"
+
+[pr]
+max_lines = 800
+exclude = ["uv.lock"]
+large_label = "large-pr-approved"
+
+[tiers]                # riskiest matching file sets a PR's tier; everything else is tier 2
+3 = ["docs/**", "*.md"]
+
+[agents]
+tools = ["claude", "codex", "gemini", "cursor", "copilot"]
+skills_targets = [".claude/skills", ".agents/skills", ".github/skills"]
+
+[skills]
+include = ["devloop-setup"]
+project = "devloop/skills"
