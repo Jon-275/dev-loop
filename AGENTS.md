@@ -10,6 +10,8 @@ project's own text, which devloop never touches.
 
 - **Enforced in CI, not by the agent.** Git hooks and CI are the gate for every rule that
   must hold; instructions here explain them. A failing gate is fixed, never bypassed.
+- **Keep it simple.** Write clear, concise code, docs and messages in plain language.
+  Prefer the simplest change that works.
 - **Tests first.** Every fix comes with a test that fails when the fix is reverted.
 - **Small PRs.** One concern per PR, about 800 changed lines or fewer (generated and
   lock files excluded). Split larger work into a stack of PRs that each merge on their own;
@@ -45,23 +47,19 @@ project's own text, which devloop never touches.
 
 ## About this project
 
-devloop (repository `dev-loop`) is a tool-agnostic framework for the review and delivery
-loop that coding agents work to. Its principle: instruct through the shared standards
-(`AGENTS.md`, Agent Skills), enforce through git hooks and CI, and measure drift per
-authoring tool. Agent hooks differ per tool and are never the gate.
+A standard review and delivery loop across coding agents. Review rules come from one
+source and are enforced in the CI/CD process.
 
-- `src/devloop/`: the CLI and library. `config.py` is the `devloop.toml` schema,
-  `tools.py` records where each tool reads instructions and skills (with doc sources),
-  `agents_md.py` the managed blocks, `skills.py` the portable skill rules, `sync.py`,
-  `doctor.py` and `init.py` the commands.
-- `src/devloop/templates/` and `src/devloop/skills/`: what `init` and `sync` render into
-  a project. This repository is itself rendered by them, so `devloop doctor --check`
-  must pass here too.
-- `docs/decisions/`: binding framework decisions; read the relevant one before changing
-  that area. `docs/tool-matrix.md`: per-tool locations and their sources.
+- `src/devloop/`: the CLI. `config.py` is the `devloop.toml` schema, `tools.py` lists
+  where each tool reads instructions and skills, and `sync.py`, `doctor.py` and
+  `init.py` are the commands.
+- `src/devloop/templates/` and `src/devloop/skills/`: what devloop writes into a project.
+  This repository uses them too, so `devloop doctor --check` must pass here.
+- `docs/decisions/`: decisions that bind the code. Read the relevant one before changing
+  that area.
 
-What must never break: sync never overwrites or deletes a file it does not manage, and
-it writes nothing when any source is invalid.
+Never break this: sync never changes a file it did not write, and it writes nothing if
+any source is invalid.
 
 ## Commands
 

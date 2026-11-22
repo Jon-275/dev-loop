@@ -94,3 +94,8 @@ def test_coordination_block_says_how_to_merge_a_stack() -> None:
     assert "merge commit" in block
     assert "gh pr edit <next> --base main" in block
     assert "only when GitHub reports a conflict" in block
+
+
+def test_rules_block_asks_for_simple_clear_language() -> None:
+    block = render_template(Config.default(version="0.1"))[0]["rules"]
+    assert "Keep it simple." in block
