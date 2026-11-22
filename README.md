@@ -32,6 +32,8 @@ devloop doctor --check    # check nothing has drifted; run this in CI
   in `pr.exclude` are not counted.
 - `devloop changelog check|build`: check the changelog fragments in `changes/`, or add
   them to `CHANGELOG.md` (see [changes/README.md](changes/README.md)).
+- `devloop changes`: in CI, say whether a pull request changes only documentation, so
+  the code checks can be skipped.
 
 ## What `init` writes
 

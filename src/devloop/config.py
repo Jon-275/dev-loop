@@ -112,6 +112,26 @@ class Changelog:
 
 
 @dataclass(frozen=True)
+class Docs:
+    """``[docs]``: which files are documentation, and which tests read documents.
+
+    A pull request that changes only documentation skips the code checks but still runs
+    the test files matching ``tests`` that mention a ``.md`` file.
+    """
+
+    files: tuple[str, ...] = (
+        "*.md",
+        "docs/*.svg",
+        "docs/*.png",
+        "docs/*.jpg",
+        "docs/*.jpeg",
+        "docs/*.gif",
+        "docs/*.webp",
+    )
+    tests: tuple[str, ...] = ("tests/*test_*.py",)
+
+
+@dataclass(frozen=True)
 class Config:
     """A validated ``devloop.toml``."""
 
@@ -124,6 +144,7 @@ class Config:
     skills: Skills = field(default_factory=Skills)
     council: Council = field(default_factory=Council)
     changelog: Changelog = field(default_factory=Changelog)
+    docs: Docs = field(default_factory=Docs)
 
     @classmethod
     def default(cls, version: str) -> Config:
@@ -156,6 +177,7 @@ def parse_config(text: str) -> Config:
         "skills",
         "council",
         "changelog",
+        "docs",
     }
     for name in data:
         if name not in sections:
@@ -170,6 +192,7 @@ def parse_config(text: str) -> Config:
     skills = _table(data, "skills", {"include", "project"})
     council = _table(data, "council", {"roles_dir", "max_reviewers", "require_status"})
     log = _table(data, "changelog", {"dir", "file", "sections", "code"})
+    docs = _table(data, "docs", {"files", "tests"})
     d_pr, d_rev, d_lab, d_ag, d_sk, d_co = PR(), Review(), Labels(), Agents(), Skills(), Council()
     return Config(
         framework=Framework(version=_str(fw, "framework.version", "version", "")),
@@ -208,6 +231,10 @@ def parse_config(text: str) -> Config:
             require_status=_require_status(council, d_co.require_status),
         ),
         changelog=_changelog(log),
+        docs=Docs(
+            files=_strs(docs, "docs.files", "files", Docs().files),
+            tests=_strs(docs, "docs.tests", "tests", Docs().tests),
+        ),
     )
 
 
