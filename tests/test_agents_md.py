@@ -77,3 +77,13 @@ def test_template_renders_config_values_into_managed_blocks() -> None:
 
 def test_missing_sections_names_each_required_project_heading() -> None:
     assert missing_sections("# AGENTS.md\n## Commands\n") == ["## About this project"]
+
+
+def test_markers_inside_code_fences_are_examples_not_blocks() -> None:
+    doc = (
+        "```markdown\n<!-- devloop:begin rules -->\nexample\n<!-- devloop:end rules -->\n```\n"
+        + DOC
+    )
+    assert parse_blocks(doc) == {"rules": "old rules\n"}
+    out = apply_blocks(doc, {"rules": "new\n"})
+    assert out.startswith("```markdown\n<!-- devloop:begin rules -->\nexample\n")

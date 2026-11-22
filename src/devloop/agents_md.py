@@ -33,12 +33,24 @@ class _Block:
 
 
 def _scan(lines: list[str]) -> list[_Block]:
-    """Find every managed block in ``lines``, raising on malformed markers."""
+    """Find every managed block in ``lines``, raising on malformed markers.
+
+    Markers inside fenced code blocks are examples, not blocks, and are ignored.
+    """
     blocks: list[_Block] = []
     open_name: str | None = None
     open_at = 0
+    fence: str | None = None
     for i, line in enumerate(lines):
-        match = _MARKER.match(line.strip())
+        stripped = line.strip()
+        if fence is None and stripped[:3] in {"```", "~~~"}:
+            fence = stripped[:3]
+            continue
+        if fence is not None:
+            if stripped.startswith(fence):
+                fence = None
+            continue
+        match = _MARKER.match(stripped)
         if not match:
             continue
         kind, name = match.groups()

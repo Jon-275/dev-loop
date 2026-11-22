@@ -16,7 +16,13 @@ from pathlib import Path
 SKILL_FILE = "SKILL.md"
 PORTABLE_FIELDS = ("name", "description")
 _NAME = re.compile(r"^[a-z0-9]+(-[a-z0-9]+)*$")
-_FIELD = re.compile(r"^([A-Za-z][A-Za-z0-9_-]*):(.*)$")
+_FIELD = re.compile(r"^([A-Za-z][A-Za-z0-9_-]*):(?: (.*))?$")
+_JUNK = frozenset({".DS_Store", "Thumbs.db", "desktop.ini", "__pycache__"})
+
+
+def is_junk(name: str) -> bool:
+    """Return whether ``name`` is an OS or editor file that is never skill content."""
+    return name in _JUNK or name.endswith(("~", ".swp", ".pyc"))
 
 
 class SkillError(ValueError):
@@ -44,12 +50,18 @@ def parse_frontmatter(text: str) -> dict[str, str]:
         match = _FIELD.match(line)
         if not match:
             raise SkillError(f"frontmatter values must be on a single line: {line!r}")
-        key, value = match.group(1), match.group(2).strip()
+        key, value = match.group(1), (match.group(2) or "").strip()
         if value in {">", "|", ">-", "|-", ""}:
             raise SkillError(f"frontmatter {key!r} must be a single line")
         if len(value) >= 2 and value[0] == value[-1] and value[0] in "\"'":
             value = value[1:-1]
-        elif ": " in value or " #" in value or value[0] in "!&*[]{}|>%@`\"'":
+        elif (
+            ": " in value
+            or " #" in value
+            or value.endswith(":")
+            or value[0] in "!&*[]{}|>%@`\"'?,"
+            or value.startswith("- ")
+        ):
             raise SkillError(f"frontmatter {key!r}: quote a value holding YAML syntax")
         if key in meta:
             raise SkillError(f"frontmatter {key!r} appears twice")
@@ -82,7 +94,7 @@ def _files(root: Traversable, prefix: str = "") -> dict[str, bytes]:
     """Return every file under ``root`` keyed by its POSIX path relative to ``root``."""
     files: dict[str, bytes] = {}
     for entry in sorted(root.iterdir(), key=lambda e: e.name):
-        if entry.name == "__pycache__":
+        if is_junk(entry.name):
             continue
         rel = f"{prefix}{entry.name}"
         if entry.is_dir():
@@ -109,7 +121,7 @@ def load_skills(root: Traversable | Path) -> dict[str, Skill]:
     return {
         entry.name: load_skill(entry)
         for entry in sorted(root.iterdir(), key=lambda e: e.name)
-        if entry.is_dir() and entry.name != "__pycache__"
+        if entry.is_dir() and not is_junk(entry.name)
     }
 
 

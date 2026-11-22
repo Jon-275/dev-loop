@@ -45,6 +45,10 @@ def test_quoted_values_are_unquoted() -> None:
         ("a", "name: a\ndescription: >\n  folded\n", "single line"),
         ("a", "name: a\ndescription: Use it: when asked.\n", "quote"),
         ("a", "name: a\ndescription: [list]\n", "quote"),
+        ("a", "name: a\ndescription: Use when:\n", "quote"),
+        ("a", "name: a\ndescription: - item\n", "quote"),
+        ("a", "name: a\ndescription: ?x\n", "quote"),
+        ("a", "name: a\ndescription:nospace\n", "single line"),
     ],
 )
 def test_non_portable_frontmatter_is_rejected(
@@ -67,3 +71,10 @@ def test_framework_skills_are_all_portable() -> None:
     assert "devloop-setup" in skills
     for name, skill in skills.items():
         assert skill.name == name
+
+
+def test_os_junk_is_never_skill_content(tmp_path: Path) -> None:
+    path = _skill(tmp_path, "a", "name: a\ndescription: d\n")
+    (path / ".DS_Store").write_bytes(b"x")
+    (path / "notes.md~").write_text("x", encoding="utf-8")
+    assert set(load_skill(path).files) == {"SKILL.md"}
