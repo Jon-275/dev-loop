@@ -13,7 +13,7 @@ import sys
 from collections.abc import Sequence
 from pathlib import Path
 
-from devloop import changelog
+from devloop import changelog, changes
 from devloop.config import CONFIG_FILE, ConfigError, load_config
 from devloop.doctor import diagnose
 from devloop.init import init
@@ -33,12 +33,13 @@ def _parser() -> argparse.ArgumentParser:
         ("doctor", "check the project is set up and nothing has drifted"),
         ("size", "in CI, report a pull request's size and fail one over pr.max_lines"),
         ("changelog", "check changelog fragments, or build them into the changelog"),
+        ("changes", "in CI, say whether a pull request changes only documentation"),
     ):
         sub = commands.add_parser(name, help=text)
         sub.add_argument("--root", type=Path, default=Path.cwd(), help="project root")
         if name == "doctor":
             sub.add_argument("--check", action="store_true", help="exit 1 on any problem")
-        if name == "size":
+        if name in ("size", "changes"):
             event = os.environ.get("GITHUB_EVENT_NAME", "")
             sub.add_argument("--event", default=event, help="github.event_name")
         if name == "changelog":
@@ -48,6 +49,28 @@ def _parser() -> argparse.ArgumentParser:
             build = actions.add_parser("build", help="move the fragments into the changelog")
             build.add_argument("--dry-run", action="store_true", help="print, write nothing")
     return parser
+
+
+def _changes(args: argparse.Namespace, root: Path) -> int:
+    """Write ``code`` and ``doc_tests`` for GitHub Actions; always exits 0."""
+    config = load_config(root / CONFIG_FILE)
+    docs = config.docs
+    skills = (config.skills.project, *config.agents.skills_targets)
+    code, files = changes.decide(args.event, root, docs, skills)
+    tests = [] if code else changes.doc_tests(root, docs)
+    if code:
+        print("Code changed (or the change could not be read): every check runs.")
+    else:
+        print(f"Only documentation changed ({len(files)} files): {', '.join(files)}")
+        print(f"The {len(tests)} test files that read documents still run.")
+    lines = [f"code={'true' if code else 'false'}", f"doc_tests={' '.join(tests)}"]
+    target = os.environ.get("GITHUB_OUTPUT")
+    if target:
+        with open(target, "a", encoding="utf-8") as handle:
+            handle.write("\n".join(lines) + "\n")
+    else:
+        print("\n".join(lines))
+    return 0
 
 
 def _changelog(args: argparse.Namespace, root: Path) -> int:
@@ -123,6 +146,8 @@ def main(argv: Sequence[str] | None = None) -> int:
             return _size(args, root)
         elif args.command == "changelog":
             return _changelog(args, root)
+        elif args.command == "changes":
+            return _changes(args, root)
         else:
             problems = diagnose(root)
             for problem in problems:
