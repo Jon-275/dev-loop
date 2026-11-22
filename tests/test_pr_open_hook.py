@@ -215,3 +215,14 @@ def test_a_devloop_committed_into_the_repo_is_never_run(clone: Clone) -> None:
     assert not (clone.work / "pwned").exists()
     assert done.returncode != 0  # the real guard ran, from PATH, and refused
     assert "'merged-b2' (#7" in done.stderr
+
+
+def test_an_older_devloop_without_the_guard_warns_and_lets_the_push_through(
+    clone: Clone,
+) -> None:
+    assert clone.install().returncode == 0
+    old = "#!/bin/sh\necho \"devloop: error: invalid choice: 'pr-open'\" >&2\nexit 2\n"
+    _script(clone.bin / "devloop", old)
+    done = clone.git("push", "origin", "ok-b2")
+    assert done.returncode == 0, done.stderr
+    assert "has no pr-open command (an older devloop); push not checked" in done.stderr

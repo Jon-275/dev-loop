@@ -6,9 +6,9 @@
 # ref being pushed on stdin; all of them are checked. Install with
 # `devloop pr-open --install`.
 #
-# If devloop is not installed the push is not checked (a warning). If the guard
-# fails in any other way the push is refused; ALLOW_PUSH_TO_FINISHED_PR=1 lets
-# it through.
+# If devloop is not installed, or is too old to have the guard, the push is not
+# checked (a warning). If the guard fails in any other way the push is refused;
+# ALLOW_PUSH_TO_FINISHED_PR=1 lets it through.
 
 refuse() {
     if [ "${ALLOW_PUSH_TO_FINISHED_PR:-}" = "1" ]; then
@@ -45,5 +45,10 @@ status=$?
 case "$status" in
     0) exit 0 ;;
     3) exit 1 ;;
+    2)
+        # A usage error: this devloop has no pr-open command.
+        echo "warning: pre-push guard: $devloop has no pr-open command (an older devloop); push not checked" >&2
+        exit 0
+        ;;
     *) refuse "devloop pr-open exited $status" ;;
 esac
