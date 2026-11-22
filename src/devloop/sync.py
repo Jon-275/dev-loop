@@ -14,7 +14,7 @@ from typing import Literal
 
 from devloop.agents_md import AGENTS_FILE, BlockError, apply_blocks, render_template
 from devloop.config import Config
-from devloop.skills import Skill, SkillError, framework_skills, load_skills
+from devloop.skills import Skill, SkillError, framework_skills, is_junk, load_skills
 
 MANIFEST = ".devloop/manifest.json"
 CLAUDE_FILE = "CLAUDE.md"
@@ -112,8 +112,12 @@ def _agents_md(root: Path, config: Config) -> bytes:
         raise SyncError(f"{AGENTS_FILE}: {exc}") from exc
 
 
-def _manifest(root: Path) -> set[str]:
-    """Return the rendered skill files the previous sync recorded."""
+def _manifest(root: Path, targets: tuple[str, ...]) -> set[str]:
+    """Return the rendered skill files the previous sync recorded.
+
+    Sync deletes what the manifest lists, so every entry must be a relative path inside a
+    configured skills target; anything else is an error, never a deletion.
+    """
     current = _read(root, MANIFEST)
     if current is None:
         return set()
@@ -121,7 +125,22 @@ def _manifest(root: Path) -> set[str]:
         paths = json.loads(current)["files"]
     except (json.JSONDecodeError, KeyError, TypeError) as exc:
         raise SyncError(f"{MANIFEST} is unreadable; delete it and sync again: {exc}") from exc
+    if not isinstance(paths, list) or not all(isinstance(p, str) for p in paths):
+        raise SyncError(f"{MANIFEST}: 'files' must be a list of paths")
+    for path in paths:
+        pure = PurePosixPath(path)
+        inside = not pure.is_absolute() and ".." not in pure.parts and "\\" not in path
+        if not inside or not any(t in pure.parents for t in map(PurePosixPath, targets)):
+            raise SyncError(
+                f"{MANIFEST} lists {path!r}, which is not inside a skills target; "
+                "remove that entry (and delete any folder of a target you dropped)"
+            )
     return set(paths)
+
+
+def _same(a: bytes, b: bytes) -> bool:
+    """Return whether two files match, ignoring CRLF versus LF line endings."""
+    return a == b or a.replace(b"\r\n", b"\n") == b.replace(b"\r\n", b"\n")
 
 
 def desired(root: Path, config: Config) -> tuple[dict[str, bytes], set[str]]:
@@ -138,10 +157,10 @@ def desired(root: Path, config: Config) -> tuple[dict[str, bytes], set[str]]:
         for name, skill in skills.items():
             for rel, content in skill.files.items():
                 rendered[f"{target}/{name}/{rel}"] = content
-    previous = _manifest(root)
+    previous = _manifest(root, config.agents.skills_targets)
     for path, content in rendered.items():
         on_disk = _read(root, path)
-        if on_disk is not None and on_disk != content and path not in previous:
+        if on_disk is not None and not _same(on_disk, content) and path not in previous:
             raise SyncError(
                 f"{path} exists but is not managed by devloop; move that skill to the "
                 "project skills folder (skills.project) and delete the copy"
@@ -153,7 +172,8 @@ def desired(root: Path, config: Config) -> tuple[dict[str, bytes], set[str]]:
             managed = any(p.startswith(f"{folder}/") for p in previous)
             for found in base.rglob("*"):
                 rel = found.relative_to(root).as_posix()
-                if not found.is_file() or rel in rendered or "__pycache__" in rel:
+                junk = any(is_junk(part) for part in found.relative_to(base).parts)
+                if not found.is_file() or rel in rendered or junk:
                     continue
                 if not managed:
                     raise SyncError(f"{rel} is in a skill folder devloop does not manage yet")
@@ -172,7 +192,7 @@ def plan(root: Path, config: Config) -> list[Change]:
         current = _read(root, path)
         if current is None:
             changes.append(Change(path, "create"))
-        elif current != content:
+        elif not _same(current, content):
             changes.append(Change(path, "update"))
     changes.extend(Change(p, "delete") for p in sorted(delete))
     return changes
@@ -185,7 +205,7 @@ def apply(root: Path, config: Config) -> list[Change]:
     for change in changes:
         path = root / change.path
         if change.action == "delete":
-            path.unlink()
+            path.unlink(missing_ok=True)  # two targets may be one folder via a symlink
             _prune(path.parent, root)
         else:
             path.parent.mkdir(parents=True, exist_ok=True)

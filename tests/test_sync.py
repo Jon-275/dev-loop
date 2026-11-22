@@ -165,3 +165,49 @@ def test_a_hand_kept_folder_with_extra_files_is_not_adopted(tmp_path: Path) -> N
     assert (tmp_path / ".claude/skills/devloop-setup/SKILL.md").read_bytes() == source
     with pytest.raises(SyncError, match="does not manage"):
         plan(tmp_path, CFG)
+
+
+@pytest.mark.parametrize("entry", ["../outside.txt", "AGENTS.md", "<absolute>", "src/a.py"])
+def test_a_manifest_entry_outside_the_skills_targets_is_never_deleted(
+    tmp_path: Path, entry: str
+) -> None:
+    root = tmp_path / "p"
+    apply(root, CFG)
+    (tmp_path / "outside.txt").write_text("keep\n", encoding="utf-8")
+    _write(root, "src/a.py", "keep\n")
+    data = json.loads((root / MANIFEST).read_text(encoding="utf-8"))
+    if entry == "<absolute>":  # a real absolute path, but only ever one inside tmp_path
+        entry = str(tmp_path / "outside.txt")
+    (root / MANIFEST).write_text(json.dumps({"files": [*data["files"], entry]}))
+    with pytest.raises(SyncError, match="not inside a skills target"):
+        apply(root, CFG)
+    assert (tmp_path / "outside.txt").is_file()
+    assert (root / "AGENTS.md").is_file()
+    assert (root / "src/a.py").is_file()
+
+
+def test_retiring_a_skill_works_when_two_targets_are_one_folder(tmp_path: Path) -> None:
+    (tmp_path / ".agents/skills").mkdir(parents=True)
+    (tmp_path / ".claude").mkdir()
+    (tmp_path / ".claude/skills").symlink_to("../.agents/skills")
+    _project_skill(tmp_path, "ours")
+    apply(tmp_path, CFG)
+    (tmp_path / "devloop/skills/ours/SKILL.md").unlink()
+    (tmp_path / "devloop/skills/ours").rmdir()
+    apply(tmp_path, CFG)
+    assert not (tmp_path / ".agents/skills/ours").exists()
+    assert plan(tmp_path, CFG) == []
+
+
+def test_crlf_checkouts_are_not_drift(tmp_path: Path) -> None:
+    apply(tmp_path, CFG)
+    for rel in (".claude/skills/devloop-setup/SKILL.md", "AGENTS.md", "CLAUDE.md"):
+        path = tmp_path / rel
+        path.write_bytes(path.read_bytes().replace(b"\n", b"\r\n"))
+    assert plan(tmp_path, CFG) == []
+
+
+def test_os_junk_in_a_rendered_skill_is_not_drift(tmp_path: Path) -> None:
+    apply(tmp_path, CFG)
+    _write(tmp_path, ".github/skills/devloop-setup/.DS_Store", "x")
+    assert plan(tmp_path, CFG) == []
