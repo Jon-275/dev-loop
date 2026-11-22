@@ -1,0 +1,54 @@
+#!/bin/sh
+# devloop pre-push guard
+#
+# Refuses a push to a branch whose pull request already merged or closed
+# (`devloop pr-open`). git passes the remote name and URL as arguments and every
+# ref being pushed on stdin; all of them are checked. Install with
+# `devloop pr-open --install`.
+#
+# If devloop is not installed, or is too old to have the guard, the push is not
+# checked (a warning). If the guard fails in any other way the push is refused;
+# ALLOW_PUSH_TO_FINISHED_PR=1 lets it through.
+
+refuse() {
+    if [ "${ALLOW_PUSH_TO_FINISHED_PR:-}" = "1" ]; then
+        echo "warning: pre-push guard: $1; ALLOW_PUSH_TO_FINISHED_PR=1, pushing anyway" >&2
+        exit 0
+    fi
+    echo "error: pre-push guard: $1; push refused. To push anyway, set ALLOW_PUSH_TO_FINISHED_PR=1." >&2
+    exit 1
+}
+
+# This checkout's devloop, else the main checkout's (worktrees share the hook), else PATH.
+# A .venv/bin/devloop that git tracks came with the code, not from an install: never run it.
+top=$(git rev-parse --show-toplevel 2>/dev/null) || top=$(pwd)
+common=$(git rev-parse --path-format=absolute --git-common-dir 2>/dev/null) || common=""
+devloop=""
+for candidate in "$top/.venv/bin/devloop" "${common:+$(dirname "$common")/.venv/bin/devloop}"; do
+    if [ -n "$candidate" ] && [ -x "$candidate" ] &&
+        ! git -C "$(dirname "$(dirname "$(dirname "$candidate")")")" ls-files --error-unmatch \
+            .venv/bin/devloop >/dev/null 2>&1; then
+        devloop="$candidate"
+        break
+    fi
+done
+if [ -z "$devloop" ]; then
+    devloop=$(command -v devloop 2>/dev/null) || devloop=""
+fi
+if [ -z "$devloop" ]; then
+    echo "warning: pre-push guard: devloop is not installed; push not checked" >&2
+    exit 0
+fi
+
+"$devloop" pr-open --git-pre-push "$@"
+status=$?
+case "$status" in
+    0) exit 0 ;;
+    3) exit 1 ;;
+    2)
+        # A usage error: this devloop has no pr-open command.
+        echo "warning: pre-push guard: $devloop has no pr-open command (an older devloop); push not checked" >&2
+        exit 0
+        ;;
+    *) refuse "devloop pr-open exited $status" ;;
+esac
