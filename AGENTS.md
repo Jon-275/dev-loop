@@ -14,7 +14,8 @@ project's own text, which devloop never touches.
 - **Small PRs.** One concern per PR, about 800 changed lines or fewer (generated and
   lock files excluded). Split larger work into a stack of PRs that each merge on their own;
   `large-pr-approved` is for a change that cannot be split, and the PR says why.
-- **Types and docstrings** on every function; never suppress a type error, fix its cause.
+- **Types on every function, docstrings on every source function**; never suppress a
+  type error, fix its cause.
 - **Never hide a finding or a figure.** Suppressed or excluded items are counted and named.
 - **Stateful changes start with their invariants**: write the states, identities and
   invariants first, then an end-state test, then the code.

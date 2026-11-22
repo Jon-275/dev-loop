@@ -99,3 +99,15 @@ def test_sync_command_reports_an_error_without_a_traceback(
 ) -> None:
     assert main(["sync", "--root", str(tmp_path)]) == 2
     assert "devloop init" in capsys.readouterr().err
+
+
+@pytest.mark.parametrize("name", ["AGENTS.md", "CLAUDE.md", "devloop.toml"])
+@pytest.mark.parametrize("argv", [["sync"], ["doctor", "--check"]])
+def test_a_non_utf8_file_is_a_message_not_a_traceback(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str], name: str, argv: list[str]
+) -> None:
+    init(tmp_path)
+    (tmp_path / name).write_bytes("@AGENTS.md\n".encode("utf-16"))
+    assert main([*argv, "--root", str(tmp_path)]) in {1, 2}
+    out = capsys.readouterr()
+    assert "UTF-8" in out.out + out.err

@@ -61,6 +61,12 @@ def main(argv: Sequence[str] | None = None) -> int:
     except (ConfigError, SyncError) as exc:
         print(f"devloop: {exc}", file=sys.stderr)
         return 2
+    except UnicodeDecodeError as exc:
+        print(f"devloop: a project file is not UTF-8 text: {exc}", file=sys.stderr)
+        return 2
+    except OSError as exc:
+        print(f"devloop: {exc}", file=sys.stderr)
+        return 2
     return 0
 
 

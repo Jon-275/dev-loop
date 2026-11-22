@@ -27,7 +27,10 @@ def _agents_md_problems(root: Path) -> list[str]:
     path = root / AGENTS_FILE
     if not path.is_file():
         return [f"{AGENTS_FILE} is missing; run `devloop sync`"]
-    text = path.read_text(encoding="utf-8")
+    try:
+        text = path.read_text(encoding="utf-8")
+    except UnicodeDecodeError:
+        return [f"{AGENTS_FILE} is not UTF-8 text"]
     try:
         parse_blocks(text)
     except BlockError as exc:
