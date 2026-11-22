@@ -7,6 +7,7 @@ Exit codes: 0 success (or a report without ``--check``), 1 doctor found problems
 from __future__ import annotations
 
 import argparse
+import os
 import sys
 from collections.abc import Sequence
 from pathlib import Path
@@ -14,6 +15,7 @@ from pathlib import Path
 from devloop.config import CONFIG_FILE, ConfigError, load_config
 from devloop.doctor import diagnose
 from devloop.init import init
+from devloop.size import run as run_size
 from devloop.sync import Change, SyncError, apply
 
 
@@ -27,12 +29,37 @@ def _parser() -> argparse.ArgumentParser:
         ("init", "write devloop.toml if absent and render the layout for every tool"),
         ("sync", "re-render AGENTS.md blocks, skills and adapters from their sources"),
         ("doctor", "check the project is set up and nothing has drifted"),
+        ("size", "in CI, report a pull request's size and fail one over pr.max_lines"),
     ):
         sub = commands.add_parser(name, help=text)
         sub.add_argument("--root", type=Path, default=Path.cwd(), help="project root")
         if name == "doctor":
             sub.add_argument("--check", action="store_true", help="exit 1 on any problem")
+        if name == "size":
+            event = os.environ.get("GITHUB_EVENT_NAME", "")
+            sub.add_argument("--event", default=event, help="github.event_name")
     return parser
+
+
+def _summary(title: str, lines: list[str]) -> None:
+    """Append ``lines`` to the GitHub Actions step summary, when there is one."""
+    path = os.environ.get("GITHUB_STEP_SUMMARY")
+    if path:
+        with open(path, "a", encoding="utf-8") as handle:
+            handle.write(f"## {title}\n\n```\n" + "\n".join(lines) + "\n```\n")
+
+
+def _size(args: argparse.Namespace, root: Path) -> int:
+    """Print the PR's size; return 1 only for an unapproved oversize PR."""
+    config = load_config(root / CONFIG_FILE)
+    code, lines = run_size(
+        args.event, os.environ.get("GITHUB_EVENT_PATH"), root, config, os.environ
+    )
+    print("\n".join(lines))
+    if code:
+        print(f"::error title=PR size::{lines[-1]}", file=sys.stderr)
+    _summary("PR size", lines)
+    return code
 
 
 def _report(changes: list[Change]) -> None:
@@ -52,6 +79,8 @@ def main(argv: Sequence[str] | None = None) -> int:
             _report(init(root))
         elif args.command == "sync":
             _report(apply(root, load_config(root / CONFIG_FILE)))
+        elif args.command == "size":
+            return _size(args, root)
         else:
             problems = diagnose(root)
             for problem in problems:

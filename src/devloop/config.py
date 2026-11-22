@@ -33,11 +33,21 @@ class Framework:
 
 
 @dataclass(frozen=True)
+class ExcludeBlock:
+    """Generated lines inside a hand-written file: from the ``start`` line to the ``end`` line."""
+
+    path: str
+    start: str
+    end: str
+
+
+@dataclass(frozen=True)
 class PR:
-    """``[pr]``: size limit, paths left out of the count, and the label that waives it."""
+    """``[pr]``: size limit, what is left out of the count, and the label that waives it."""
 
     max_lines: int = 800
     exclude: tuple[str, ...] = ()
+    exclude_blocks: tuple[ExcludeBlock, ...] = ()
     large_label: str = "large-pr-approved"
 
 
@@ -123,7 +133,7 @@ def parse_config(text: str) -> Config:
     fw = _table(data, "framework", {"version"})
     if "version" not in fw:
         raise ConfigError("framework.version is required")
-    pr = _table(data, "pr", {"max_lines", "exclude", "large_label"})
+    pr = _table(data, "pr", {"max_lines", "exclude", "exclude_blocks", "large_label"})
     review = _table(data, "review", {"providers", "blocking_severities", "lenses_dir"})
     labels = _table(data, "labels", {"prefixes"})
     agents = _table(data, "agents", {"tools", "skills_targets"})
@@ -135,6 +145,7 @@ def parse_config(text: str) -> Config:
         pr=PR(
             max_lines=_pos_int(pr.get("max_lines", d_pr.max_lines), "pr.max_lines"),
             exclude=_strs(pr, "pr.exclude", "exclude", d_pr.exclude),
+            exclude_blocks=_blocks(pr.get("exclude_blocks", [])),
             large_label=_str(pr, "pr.large_label", "large_label", d_pr.large_label),
         ),
         tiers=_tiers(_table(data, "tiers", None)),
@@ -293,3 +304,19 @@ def _require_status(table: Mapping[str, Any], default: tuple[int, ...]) -> tuple
     ):
         raise ConfigError("council.require_status must be a list of tiers (1, 2 or 3)")
     return tuple(value)
+
+
+def _blocks(value: object) -> tuple[ExcludeBlock, ...]:
+    """Validate ``pr.exclude_blocks``: a list of ``{path, start, end}`` tables."""
+    where = "pr.exclude_blocks"
+    if not isinstance(value, list):
+        raise ConfigError(f"{where} must be a list of {{ path, start, end }} tables")
+    blocks = []
+    for i, item in enumerate(value):
+        if not isinstance(item, dict) or set(item) != {"path", "start", "end"}:
+            raise ConfigError(f"{where}[{i}] must have exactly path, start and end")
+        path, start, end = (
+            _str(item, f"{where}[{i}].{k}", k, "") for k in ("path", "start", "end")
+        )
+        blocks.append(ExcludeBlock(_rel_path(path, f"{where}[{i}].path"), start, end))
+    return tuple(blocks)
