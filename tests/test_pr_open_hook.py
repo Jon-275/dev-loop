@@ -202,3 +202,16 @@ def test_install_fails_when_git_would_not_run_the_guard(clone: Clone) -> None:
     done = clone.install()
     assert done.returncode == 2
     assert "git would not run it" in done.stderr
+
+
+def test_a_devloop_committed_into_the_repo_is_never_run(clone: Clone) -> None:
+    assert clone.install().returncode == 0
+    fake = clone.work / ".venv" / "bin" / "devloop"
+    fake.parent.mkdir(parents=True)
+    _script(fake, f"#!/bin/sh\ntouch {clone.work / 'pwned'}\nexit 0\n")
+    assert clone.git("add", "-f", ".venv/bin/devloop").returncode == 0
+    assert clone.git("commit", "-q", "-m", "a PR ships its own devloop").returncode == 0
+    done = clone.git("push", "origin", "HEAD:merged-b2")
+    assert not (clone.work / "pwned").exists()
+    assert done.returncode != 0  # the real guard ran, from PATH, and refused
+    assert "'merged-b2' (#7" in done.stderr

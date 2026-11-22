@@ -20,11 +20,14 @@ refuse() {
 }
 
 # This checkout's devloop, else the main checkout's (worktrees share the hook), else PATH.
+# A .venv/bin/devloop that git tracks came with the code, not from an install: never run it.
 top=$(git rev-parse --show-toplevel 2>/dev/null) || top=$(pwd)
 common=$(git rev-parse --path-format=absolute --git-common-dir 2>/dev/null) || common=""
 devloop=""
 for candidate in "$top/.venv/bin/devloop" "${common:+$(dirname "$common")/.venv/bin/devloop}"; do
-    if [ -n "$candidate" ] && [ -x "$candidate" ]; then
+    if [ -n "$candidate" ] && [ -x "$candidate" ] &&
+        ! git -C "$(dirname "$(dirname "$(dirname "$candidate")")")" ls-files --error-unmatch \
+            .venv/bin/devloop >/dev/null 2>&1; then
         devloop="$candidate"
         break
     fi
