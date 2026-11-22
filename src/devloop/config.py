@@ -92,6 +92,25 @@ class Council:
     require_status: tuple[int, ...] = (1,)
 
 
+DEFAULT_SECTIONS = {
+    "breaking": "Breaking changes",
+    "added": "Added",
+    "changed": "Changed",
+    "fixed": "Fixed",
+    "security": "Security",
+}
+
+
+@dataclass(frozen=True)
+class Changelog:
+    """``[changelog]``: fragment folder, changelog file, sections, and paths needing an entry."""
+
+    dir: str = "changes"
+    file: str = "CHANGELOG.md"
+    sections: dict[str, str] = field(default_factory=lambda: dict(DEFAULT_SECTIONS))
+    code: tuple[str, ...] = ("src/*", ".github/*", "pyproject.toml")
+
+
 @dataclass(frozen=True)
 class Config:
     """A validated ``devloop.toml``."""
@@ -104,6 +123,7 @@ class Config:
     agents: Agents = field(default_factory=Agents)
     skills: Skills = field(default_factory=Skills)
     council: Council = field(default_factory=Council)
+    changelog: Changelog = field(default_factory=Changelog)
 
     @classmethod
     def default(cls, version: str) -> Config:
@@ -126,7 +146,17 @@ def parse_config(text: str) -> Config:
         data = tomllib.loads(text)
     except tomllib.TOMLDecodeError as exc:
         raise ConfigError(f"{CONFIG_FILE} is not valid TOML: {exc}") from exc
-    sections = {"framework", "pr", "tiers", "review", "labels", "agents", "skills", "council"}
+    sections = {
+        "framework",
+        "pr",
+        "tiers",
+        "review",
+        "labels",
+        "agents",
+        "skills",
+        "council",
+        "changelog",
+    }
     for name in data:
         if name not in sections:
             raise ConfigError(f"unknown section [{name}] in {CONFIG_FILE}")
@@ -139,6 +169,7 @@ def parse_config(text: str) -> Config:
     agents = _table(data, "agents", {"tools", "skills_targets"})
     skills = _table(data, "skills", {"include", "project"})
     council = _table(data, "council", {"roles_dir", "max_reviewers", "require_status"})
+    log = _table(data, "changelog", {"dir", "file", "sections", "code"})
     d_pr, d_rev, d_lab, d_ag, d_sk, d_co = PR(), Review(), Labels(), Agents(), Skills(), Council()
     return Config(
         framework=Framework(version=_str(fw, "framework.version", "version", "")),
@@ -176,6 +207,7 @@ def parse_config(text: str) -> Config:
             ),
             require_status=_require_status(council, d_co.require_status),
         ),
+        changelog=_changelog(log),
     )
 
 
@@ -320,3 +352,20 @@ def _blocks(value: object) -> tuple[ExcludeBlock, ...]:
         )
         blocks.append(ExcludeBlock(_rel_path(path, f"{where}[{i}].path"), start, end))
     return tuple(blocks)
+
+
+def _changelog(table: Mapping[str, Any]) -> Changelog:
+    """Validate ``[changelog]``; a section key is the ``<section>`` in a fragment's name."""
+    d = Changelog()
+    sections = table.get("sections", d.sections)
+    if not isinstance(sections, dict) or not sections:
+        raise ConfigError("changelog.sections must be a table of name = heading")
+    for key, heading in sections.items():
+        if not re.fullmatch(r"[a-z]+", key) or not isinstance(heading, str) or not heading:
+            raise ConfigError(f"changelog.sections.{key}: a lower-case name and a heading")
+    return Changelog(
+        dir=_rel_path(_str(table, "changelog.dir", "dir", d.dir), "changelog.dir"),
+        file=_rel_path(_str(table, "changelog.file", "file", d.file), "changelog.file"),
+        sections=dict(sections),
+        code=_strs(table, "changelog.code", "code", d.code),
+    )

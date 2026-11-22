@@ -30,6 +30,8 @@ devloop doctor --check    # check nothing has drifted; run this in CI
 - `devloop size`: in CI, count a pull request's changed lines and fail one over
   `pr.max_lines`, unless it has the `pr.large_label` label. Skill copies and the paths
   in `pr.exclude` are not counted.
+- `devloop changelog check|build`: check the changelog fragments in `changes/`, or add
+  them to `CHANGELOG.md` (see [changes/README.md](changes/README.md)).
 
 ## What `init` writes
 

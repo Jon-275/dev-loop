@@ -8,10 +8,12 @@ from __future__ import annotations
 
 import argparse
 import os
+import subprocess
 import sys
 from collections.abc import Sequence
 from pathlib import Path
 
+from devloop import changelog
 from devloop.config import CONFIG_FILE, ConfigError, load_config
 from devloop.doctor import diagnose
 from devloop.init import init
@@ -30,6 +32,7 @@ def _parser() -> argparse.ArgumentParser:
         ("sync", "re-render AGENTS.md blocks, skills and adapters from their sources"),
         ("doctor", "check the project is set up and nothing has drifted"),
         ("size", "in CI, report a pull request's size and fail one over pr.max_lines"),
+        ("changelog", "check changelog fragments, or build them into the changelog"),
     ):
         sub = commands.add_parser(name, help=text)
         sub.add_argument("--root", type=Path, default=Path.cwd(), help="project root")
@@ -38,7 +41,44 @@ def _parser() -> argparse.ArgumentParser:
         if name == "size":
             event = os.environ.get("GITHUB_EVENT_NAME", "")
             sub.add_argument("--event", default=event, help="github.event_name")
+        if name == "changelog":
+            actions = sub.add_subparsers(dest="action", required=True)
+            check = actions.add_parser("check", help="validate the fragments")
+            check.add_argument("--pr", action="store_true", help="note code with no entry")
+            build = actions.add_parser("build", help="move the fragments into the changelog")
+            build.add_argument("--dry-run", action="store_true", help="print, write nothing")
     return parser
+
+
+def _changelog(args: argparse.Namespace, root: Path) -> int:
+    """Check or build the changelog fragments; return 1 only for invalid fragments."""
+    log = load_config(root / CONFIG_FILE).changelog
+    if args.action == "build":
+        try:
+            result = changelog.build(root, log, dry_run=args.dry_run)
+        except ValueError as exc:
+            print(f"devloop changelog: {exc}", file=sys.stderr)
+            return 1
+        if args.dry_run:
+            print(result, end="")
+        return 0
+    errors = changelog.check(root, log)
+    for error in errors:
+        print(f"::error title=Changelog fragment::{error}", file=sys.stderr)
+    if not errors:
+        print(f"devloop changelog: {len(changelog.fragment_files(root, log))} fragment(s) valid.")
+    if args.pr:
+        try:
+            changed = changelog.changed_files(root)
+        except (OSError, UnicodeDecodeError, subprocess.CalledProcessError) as exc:
+            changed = None
+            print(f"devloop changelog: cannot read the change ({exc}); skipping the note.")
+        if changed is not None and changelog.needs_entry(changed, log):
+            print(
+                "::notice title=Changelog::This pull request changes code but adds no "
+                f"{log.dir}/<slug>.<section>.md fragment (see {log.dir}/README.md)."
+            )
+    return 1 if errors else 0
 
 
 def _summary(title: str, lines: list[str]) -> None:
@@ -81,6 +121,8 @@ def main(argv: Sequence[str] | None = None) -> int:
             _report(apply(root, load_config(root / CONFIG_FILE)))
         elif args.command == "size":
             return _size(args, root)
+        elif args.command == "changelog":
+            return _changelog(args, root)
         else:
             problems = diagnose(root)
             for problem in problems:
