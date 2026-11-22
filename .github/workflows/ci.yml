@@ -10,9 +10,10 @@ on:
 permissions:
   contents: read
 
-# Pull request runs replace each other; every push to main keeps its own run.
+# Pull request runs replace each other; every push to main keeps its own run. Label
+# changes share a group of their own, so they never cancel a run checking the code.
 concurrency:
-  group: ci-${{ github.event_name == 'push' && github.sha || github.ref }}-${{ github.event.action }}
+  group: ci-${{ github.event_name == 'push' && github.sha || github.ref }}${{ (github.event.action == 'labeled' || github.event.action == 'unlabeled') && '-label' || '' }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:

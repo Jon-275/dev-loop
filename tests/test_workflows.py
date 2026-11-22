@@ -113,4 +113,7 @@ def test_ci_uses_its_own_shared_workflows_from_this_checkout() -> None:
 def test_main_pushes_never_cancel_each_other() -> None:
     concurrency = _load("ci.yml")["concurrency"]
     assert "github.event_name == 'push' && github.sha" in concurrency["group"]
+    # One group per PR for code runs and one for label changes, which never cancel each other.
+    assert "github.event.action }}" not in concurrency["group"]
+    assert "'labeled' || github.event.action == 'unlabeled') && '-label'" in concurrency["group"]
     assert concurrency["cancel-in-progress"] == "${{ github.event_name == 'pull_request' }}"
