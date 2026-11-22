@@ -6,10 +6,12 @@ from pathlib import Path
 
 import pytest
 
+from devloop import __version__
 from devloop.cli import main
 from devloop.doctor import diagnose
 from devloop.init import init
 
+VERSION = ".".join(__version__.split(".")[:2])  # the framework version doctor expects
 TOOLS = ("claude", "codex", "gemini", "antigravity", "cursor", "copilot")
 
 
@@ -30,7 +32,7 @@ def test_init_on_an_empty_repo_is_doctor_clean_for_every_tool(tmp_path: Path) ->
 
 def test_init_never_overwrites_an_existing_config(tmp_path: Path) -> None:
     (tmp_path / "devloop.toml").write_text(
-        '[framework]\nversion = "0.1"\n[agents]\ntools = ["codex"]\n'
+        f'[framework]\nversion = "{VERSION}"\n[agents]\ntools = ["codex"]\n'
         'skills_targets = [".agents/skills"]\n',
         encoding="utf-8",
     )
@@ -73,7 +75,7 @@ def test_doctor_names_each_kind_of_drift(
 
 def test_doctor_reports_a_tool_with_no_skills_folder_it_reads(tmp_path: Path) -> None:
     (tmp_path / "devloop.toml").write_text(
-        '[framework]\nversion = "0.1"\n[agents]\ntools = ["claude", "copilot"]\n'
+        f'[framework]\nversion = "{VERSION}"\n[agents]\ntools = ["claude", "copilot"]\n'
         'skills_targets = [".claude/skills"]\n',
         encoding="utf-8",
     )
