@@ -1,6 +1,7 @@
 """Tests for ``devloop main-health``: one "main is red" issue per workflow."""
 
 import json
+import subprocess
 
 import pytest
 
@@ -90,10 +91,24 @@ def test_the_command_reports_what_it_did(
     assert capsys.readouterr().out == "CI at aaaaaaaaaaaa: nothing to do\n"
 
 
-@pytest.mark.parametrize("needs", ["{}", "not json", "[]"])
+@pytest.mark.parametrize("needs", ["{}", "not json", "[]", '{"quality": "failure"}'])
 def test_missing_job_results_are_a_configuration_error(
     needs: str, capsys: pytest.CaptureFixture[str]
 ) -> None:
     argv = ["main-health", "--workflow", "CI", "--sha", SHA, "--run-url", "u", "--needs", needs]
     assert main(argv) == 2
     assert "needs" in capsys.readouterr().err
+
+
+def test_a_failed_gh_call_is_one_line_not_a_traceback(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    def failing(args: list[str]) -> str:
+        """Fail like gh without permission."""
+        raise subprocess.CalledProcessError(1, ["gh", *args], stderr="HTTP 403: Forbidden\n")
+
+    monkeypatch.setattr(health, "run_gh", failing)
+    needs = json.dumps(_needs(quality="failure"))
+    argv = ["main-health", "--workflow", "CI", "--sha", SHA, "--run-url", "u", "--needs", needs]
+    assert main(argv) == 2
+    assert capsys.readouterr().err == "devloop: gh api failed: HTTP 403: Forbidden\n"

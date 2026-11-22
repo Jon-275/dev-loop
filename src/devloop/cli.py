@@ -65,13 +65,23 @@ def _main_health(args: argparse.Namespace) -> int:
         needs = json.loads(args.needs)
     except ValueError:
         needs = None
-    if not isinstance(needs, dict) or not needs:
+    if (
+        not isinstance(needs, dict)
+        or not needs
+        or not all(isinstance(job, dict) for job in needs.values())
+    ):
         print(
             "devloop: --needs has no job results; list the workflow's jobs in needs",
             file=sys.stderr,
         )
         return 2
-    done = main_health.report(main_health.run_gh, args.workflow, args.sha, args.run_url, needs)
+    try:
+        done = main_health.report(main_health.run_gh, args.workflow, args.sha, args.run_url, needs)
+    except subprocess.CalledProcessError as exc:
+        reason = (exc.stderr or "").strip().splitlines()
+        command = " ".join(exc.cmd[:2]) if isinstance(exc.cmd, list) else "gh"
+        print(f"devloop: {command} failed: {reason[0] if reason else exc}", file=sys.stderr)
+        return 2
     print(f"{args.workflow} at {args.sha[:12]}: {done}")
     return 0
 
