@@ -69,3 +69,25 @@ def merge_repo(tmp_path: Path) -> MergeRepo:
         return repo
 
     return build
+
+
+@pytest.fixture(autouse=True)
+def _no_inherited_git(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Remove every ``GIT_*`` variable before each test, as a git hook would leave them set."""
+    for name in [n for n in os.environ if n.startswith("GIT_")]:
+        monkeypatch.delenv(name)
+
+
+@pytest.fixture()
+def repo(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
+    """Return a repository whose base commit holds two Python files and a README (the cwd)."""
+    from review_helpers import run
+
+    run(tmp_path, "init", "-q", "-b", "main")
+    (tmp_path / "keep.py").write_text("x = 1\n")
+    (tmp_path / "gone.py").write_text("y = 2\n")
+    (tmp_path / "README.md").write_text("hi\n")
+    run(tmp_path, "add", ".")
+    run(tmp_path, "commit", "-q", "-m", "base")
+    monkeypatch.chdir(tmp_path)
+    return tmp_path
