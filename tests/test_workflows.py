@@ -117,3 +117,43 @@ def test_main_pushes_never_cancel_each_other() -> None:
     assert "github.event.action }}" not in concurrency["group"]
     assert "'labeled' || github.event.action == 'unlabeled') && '-label'" in concurrency["group"]
     assert concurrency["cancel-in-progress"] == "${{ github.event_name == 'pull_request' }}"
+
+
+def test_the_review_runs_only_trusted_code_and_reads_the_pull_request_as_data() -> None:
+    steps = _load("review.yml")["jobs"]["review"]["steps"]
+    trusted, pr = steps[0]["with"], steps[1]["with"]
+    assert (trusted["ref"], trusted["path"]) == ("${{ github.sha }}", "trusted")
+    assert (pr["ref"], pr["path"]) == ("${{ github.event.pull_request.head.sha }}", "pr")
+    install = next(s for s in steps if s.get("name", "").startswith("Install devloop"))
+    assert install["working-directory"] == "trusted"
+    assert steps[2]["with"]["enable-cache"] is False
+    in_pr = [s["name"] for s in steps if s.get("working-directory") == "pr"]
+    assert in_pr == ["Review"]
+    assert '--trusted "$GITHUB_WORKSPACE/trusted"' in steps[-2]["run"]
+
+
+def test_only_the_review_step_holds_the_key() -> None:
+    steps = _load("review.yml")["jobs"]["review"]["steps"]
+    holding = [s["name"] for s in steps if "secrets." in str(s.get("env", {}))]
+    assert holding == ["Review"]
+    job = _load("review.yml")["jobs"]["review"]
+    assert job["permissions"] == {"contents": "read", "pull-requests": "write", "statuses": "write"}
+    assert job["timeout-minutes"] == 40
+
+
+def test_the_status_always_reports_and_fails_closed() -> None:
+    steps = _load("review.yml")["jobs"]["review"]["steps"]
+    report = steps[-1]
+    assert report["if"].startswith("always()")
+    assert "state=failure" in report["run"] and report["env"]["OUTCOME"] == (
+        "${{ steps.review.outcome }}"
+    )
+
+
+def test_dev_loop_reviews_itself_on_pull_request_target_from_the_base_branch() -> None:
+    caller = _load("review-trusted.yml")
+    assert list(_on(caller)) == ["pull_request_target"]
+    for name in ("gemini", "reflection"):
+        job = caller["jobs"][name]
+        assert job["uses"] == "./.github/workflows/review.yml"
+        assert job["with"] == {"provider": name, "devloop": "."}

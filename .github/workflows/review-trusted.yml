@@ -1,0 +1,36 @@
+# dev-loop's own model reviews, through its shared review.yml. pull_request_target runs
+# the base branch's copy of this file and of review.yml, and devloop is installed from
+# the base branch's checkout (devloop: "."), so a pull request never runs with the keys.
+name: Model reviews
+
+'on':
+  pull_request_target:
+    types: [opened, synchronize, reopened, ready_for_review]
+
+permissions:
+  contents: read
+
+jobs:
+  gemini:
+    uses: ./.github/workflows/review.yml
+    permissions:
+      contents: read
+      pull-requests: write
+      statuses: write
+    with:
+      provider: gemini
+      devloop: "."
+    secrets:
+      api_key: ${{ secrets.GEMINI_API_KEY }}
+
+  reflection:
+    uses: ./.github/workflows/review.yml
+    permissions:
+      contents: read
+      pull-requests: write
+      statuses: write
+    with:
+      provider: reflection
+      devloop: "."
+    secrets:
+      api_key: ${{ secrets.REFLECTION_API_KEY }}

@@ -1,0 +1,142 @@
+# A model review of a pull request, shared by every project that uses devloop.
+#
+# Call it from a workflow that runs on pull_request_target, one job per reviewer:
+#
+#   gemini:
+#     uses: Jon-275/dev-loop/.github/workflows/review.yml@<tag>
+#     permissions: { contents: read, pull-requests: write, statuses: write }
+#     with: { provider: gemini, devloop: "git+https://github.com/Jon-275/dev-loop@<tag>" }
+#     secrets: { api_key: "${{ secrets.GEMINI_API_KEY }}" }
+#
+# Security: this job holds the reviewer's API key and a token that can write review
+# comments and commit statuses, so it never runs code the pull request controls.
+# pull_request_target runs the base branch's copy of the calling workflow. devloop is
+# installed from the given requirement (or, with ".", from the base branch's checkout),
+# devloop.toml, the lenses and the review feedback are read from the base branch's
+# checkout ("trusted"), and the pull request's commit is checked out apart ("pr") only
+# as Git objects to read. Nothing in "pr" is executed, installed or imported, and no
+# cache is shared with the pull request.
+#
+# The commit status is pending while the review runs and fails closed: a missing key,
+# a model or GitHub error, or a reply that is not the expected JSON fails it. It runs on
+# every pull request, so the status always reports; a pull request whose tier routes no
+# review to this reviewer, or that changes no reviewed file type, passes and says why.
+name: Model review
+
+on:
+  workflow_call:
+    inputs:
+      provider:
+        description: The reviewer to run (gemini, reflection, or one in [review.reviewers])
+        required: true
+        type: string
+      devloop:
+        description: Where to install devloop from (a uv requirement, or . in dev-loop itself)
+        required: true
+        type: string
+    secrets:
+      api_key:
+        description: The reviewer's API key
+        required: false
+
+permissions:
+  contents: read
+
+jobs:
+  review:
+    name: Review
+    runs-on: ubuntu-24.04
+    # 40 minutes: a split review has room for further parts, each with its retries.
+    timeout-minutes: 40
+    permissions:
+      contents: read
+      pull-requests: write
+      statuses: write
+    concurrency:
+      group: devloop-review-${{ inputs.provider }}-${{ github.event.pull_request.number }}
+      cancel-in-progress: true
+    steps:
+      - name: Check out the base commit (the code and settings that run)
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          # github.sha is the default branch tip whose copy of the caller is running.
+          ref: ${{ github.sha }}
+          path: trusted
+          persist-credentials: false
+
+      - name: Check out the pull request (data only, never executed)
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          path: pr
+          # The review diffs BASE_SHA...HEAD_SHA (the merge base) and the commits since
+          # its last reviewed head.
+          fetch-depth: 0
+          persist-credentials: false
+
+      - uses: astral-sh/setup-uv@1db35dd8eee11c5894872e0b383ae6c406cf738d # v10.4.0
+        with:
+          python-version: "3.12"
+          enable-cache: false
+
+      - name: Install devloop from the trusted side
+        working-directory: trusted
+        env:
+          DEVLOOP: ${{ inputs.devloop }}
+        run: uv tool install "$DEVLOOP"
+
+      - name: Name the commit status
+        id: context
+        env:
+          PROVIDER: ${{ inputs.provider }}
+        run: |
+          context="$(devloop review --provider "$PROVIDER" --trusted "$GITHUB_WORKSPACE/trusted" --status-context)"
+          echo "context=${context}" >> "$GITHUB_OUTPUT"
+
+      - name: Mark the review pending on the head commit
+        env:
+          GH_TOKEN: ${{ github.token }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          CONTEXT: ${{ steps.context.outputs.context }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: >-
+          gh api "repos/${GITHUB_REPOSITORY}/statuses/${HEAD_SHA}"
+          -f state=pending -f "context=${CONTEXT}"
+          -f "description=Reviewing this commit" -f "target_url=${RUN_URL}"
+
+      - name: Review
+        id: review
+        working-directory: pr
+        env:
+          DEVLOOP_API_KEY: ${{ secrets.api_key }}
+          GITHUB_TOKEN: ${{ github.token }}
+          PROVIDER: ${{ inputs.provider }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: devloop review --provider "$PROVIDER" --trusted "$GITHUB_WORKSPACE/trusted"
+
+      - name: Report the review's outcome on the head commit
+        if: always() && steps.context.outputs.context != ''
+        env:
+          GH_TOKEN: ${{ github.token }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          CONTEXT: ${{ steps.context.outputs.context }}
+          OUTCOME: ${{ steps.review.outcome }}
+          # Counts and SHAs only, no paths: routed out, incomplete, incremental, nothing new.
+          DESCRIPTION: ${{ steps.review.outputs.status_description }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          if [ "$OUTCOME" = "success" ]; then
+            state=success
+            description="${DESCRIPTION:-Reviewed; resolve any finding threads before merge}"
+          elif [ -n "$DESCRIPTION" ]; then
+            state=failure
+            description="$DESCRIPTION"
+          else
+            state=failure
+            description="The review could not run; open the run for the reason"
+          fi
+          gh api "repos/${GITHUB_REPOSITORY}/statuses/${HEAD_SHA}" \
+            -f "state=${state}" -f "context=${CONTEXT}" \
+            -f "description=${description}" -f "target_url=${RUN_URL}"
