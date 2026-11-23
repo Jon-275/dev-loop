@@ -144,7 +144,7 @@ def _summary(oid: str, run: str = "") -> dict[str, Any]:
     [
         ("101", "102", {"Gemini": 1}),  # a failed re-run after an earlier run's summary
         ("101", "101", {}),  # a partial review: its summary, then its own failure status
-        ("", "102", {}),  # an older summary names no run: matched by commit
+        ("", "102", {"Gemini": 1}),  # a summary naming no run never covers a named run
         ("101", "", {}),  # a status naming no run: matched by commit
     ],
     ids=["failed-rerun", "partial-review", "summary-without-run", "status-without-run"],
@@ -286,7 +286,7 @@ def test_the_report_names_every_figure_and_every_exclusion() -> None:
     assert "Escaped defects: not measured." in text
     assert "CI minutes: not measured." in text
     assert "| Reflection | 0 | - | 0 | 0 | 0 | n/a |" in text
-    assert "| 0-200 | 0 | n/a | n/a | n/a |" in text  # an empty bucket is not measured
+    assert "| 0-199 | 0 | n/a | n/a | n/a |" in text  # an empty bucket is not measured
     assert "Reflection 0 summary(ies) without a token marker" in text
 
 
@@ -303,3 +303,16 @@ def test_the_saved_json_records_its_period(tmp_path: Path, monkeypatch: pytest.M
     data = json.loads(out.read_text())
     since, until = datetime.fromisoformat(data["since"]), datetime.fromisoformat(data["until"])
     assert until - since == timedelta(days=3) and since.tzinfo is not None
+
+
+def test_one_failed_status_per_reviewer_and_commit_is_counted_once() -> None:
+    commit = _commit("a", run="5", Gemini="FAILURE")
+    contexts = commit["commit"]["status"]["contexts"] * 2
+    twice = {"commit": {**commit["commit"], "status": {"contexts": contexts}}}
+    assert _from(_node(9, commits=[twice])).unmeasured_runs == {"Gemini": 1}
+
+
+def test_a_pull_request_on_a_bucket_boundary_is_in_exactly_one_bucket() -> None:
+    sizes = metrics.summarise([_from(_node(1, additions=200))], NAMES)["sizes"]
+    assert [s["lines"] for s in sizes if s["prs"]] == ["200-799"]
+    assert sum(s["prs"] for s in sizes) == 1
