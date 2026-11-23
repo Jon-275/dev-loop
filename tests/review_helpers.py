@@ -8,6 +8,27 @@ from pathlib import Path
 
 from devloop.review.model import Provider
 
+#: A sample diff: one edited file whose added lines start with ``--`` and ``++``, one deleted.
+DIFF = """diff --git a/app.py b/app.py
+index 1..2 100644
+--- a/app.py
++++ b/app.py
+@@ -10,3 +10,4 @@ def f():
+ a = 1
+--- b = 2
++++ b = 3
++c = 4
+ d = 5
+diff --git a/gone.py b/gone.py
+deleted file mode 100644
+--- a/gone.py
++++ /dev/null
+@@ -1,2 +0,0 @@
+-x = 1
+-y = 2
+"""
+
+
 PROVIDER = Provider(
     name="Testbot",
     status_context="Testbot review",

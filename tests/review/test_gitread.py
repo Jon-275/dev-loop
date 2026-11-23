@@ -4,29 +4,10 @@ import subprocess
 from pathlib import Path
 
 import pytest
-from review_helpers import commit, run, section
+from review_helpers import DIFF, commit, run, section
 
 from devloop.config import REVIEWED_FILES
 from devloop.review import gitread
-
-DIFF = """diff --git a/app.py b/app.py
-index 1..2 100644
---- a/app.py
-+++ b/app.py
-@@ -10,3 +10,4 @@ def f():
- a = 1
---- b = 2
-+++ b = 3
-+c = 4
- d = 5
-diff --git a/gone.py b/gone.py
-deleted file mode 100644
---- a/gone.py
-+++ /dev/null
-@@ -1,2 +0,0 @@
--x = 1
--y = 2
-"""
 
 
 def test_deleted_files_are_reviewed_from_the_diff(repo: Path) -> None:
