@@ -237,18 +237,197 @@ def says_nothing_found(sentence: str) -> bool:
     return False
 
 
+#: The change as a sentence's subject: "This", "This change", "The new PR", "It also".
+#: A bare "The" or "It" is not enough: "The fixes leak memory", "It blocks forever".
+_CHANGE = r"(?:change|pr|pull\s+request|commit|patch|update|fix|diff|round)"
+_SUBJECT = (
+    r"(?:this(?:\s+(?:incremental|new|small|follow-up))?(?:\s+" + _CHANGE + r")?"
+    r"|the(?:\s+(?:incremental|new|small|follow-up))?\s+" + _CHANGE + r"|it\s+also)"
+    r"(?:\s+(?:also|now))?"
+)
+#: One word of free text: ASCII letters, digits, hyphens, apostrophes and underscores, or
+#: a code span (`.gitattributes`). Any other character (a dash, an ellipsis, a fullwidth
+#: stop) rejects the template, since it could start another clause.
+_WORD = r"(?:`[^`\s]+`|[A-Za-z0-9_'-])+"
+_SPACE = r"[ \t]+"
+_END = r"[.!]?"
+#: The problems a "fixes" or "prevents" sentence may name as its object, last.
+_PROBLEM = r"(?:crash|crashes|race|races|leak|leaks|deadlock|deadlocks|hang|hangs|regression)"
+#: The nouns a "failed" may name in a description ("failed model attempts").
+_FAILED_NOUN = (
+    r"(?:attempts?|requests?|reviewers?|runs?|jobs?|calls?|checks?|writes?|builds?|steps?)"
+)
+#: Words that may not appear in free text: each could start a second clause, hedge the
+#: fix, or say a concern remains ("the tests don't cover", "the reader also has").
+_CONNECTIVES = frozenset(
+    "and or but then because when while if unless so as to though although yet except "
+    "however whereas albeit nor otherwise also again still only until which with without "
+    "instead forever never not no none nothing cannot can't don't doesn't isn't aren't "
+    "won't wasn't weren't by at for via using through of one".split()
+)
+#: Words that turn a ", with ... tests updated" tail into a missing or disabled check. The
+#: tail is never masked, so a concern word in it still counts.
+_TAIL_DENIALS = frozenset("no not without none never removed disabled skipped".split())
+#: A hypothetical in a relative clause states the hole being closed ("could hide").
+_HYPOTHETICAL = frozenset({"could", "might", "would"})
+_FREE = r"(?:" + _SPACE + _WORD + r")"
+#: Whole-sentence templates for a sentence that only describes what the change does or
+#: fixes (gtm_toolkit #264-#271). The named ``free*`` groups are free text, checked for
+#: connectives; ``masked`` is the only part that may hold concern words.
+_DESCRIPTIONS = tuple(
+    re.compile(template, re.IGNORECASE)
+    for template in (
+        # "This closes the paths where X could hide Y, with corresponding tests updated."
+        _SUBJECT
+        + _SPACE
+        + r"(?:closes|prevents)"
+        + _SPACE
+        + r"(?P<masked>(?:the|a|an)(?P<free1>"
+        + _FREE
+        + r"{1,3})"
+        + _SPACE
+        + r"(?:where|that|in"
+        + _SPACE
+        + r"which)(?P<clause>"
+        + _FREE
+        + r"{2,16}))"
+        + r"(?:,"
+        + _SPACE
+        + r"with(?P<tail>"
+        + _FREE
+        + r"{0,4})"
+        + _SPACE
+        + r"tests"
+        + _SPACE
+        + r"(?:updated|added))?"
+        + _END,
+        # "This PR fixes the crash in the sync loop." "This prevents a race between ..."
+        _SUBJECT
+        + _SPACE
+        + r"(?:fixes|prevents)"
+        + _SPACE
+        + r"(?P<masked>(?:the|a|an)(?P<free1>"
+        + _FREE
+        + r"{0,2})"
+        + _SPACE
+        + _PROBLEM
+        + r")"
+        + r"(?:"
+        + _SPACE
+        + r"(?:in|between|on|during)"
+        + _SPACE
+        + r"the(?P<free2>"
+        + _FREE
+        + r"{1,3}))?"
+        + _END,
+        # "The change extends loop metrics to capture failed model attempts."
+        _SUBJECT
+        + _SPACE
+        + r"(?:extends|updates|hardens|adds)(?P<free1>"
+        + _FREE
+        + r"{1,3})"
+        + _SPACE
+        + r"to"
+        + _SPACE
+        + r"(?:capture|track|count|record)"
+        + _SPACE
+        + r"(?P<masked>failed)(?:"
+        + _SPACE
+        + r"model)?(?:"
+        + _SPACE
+        + r"request)?"
+        + _SPACE
+        + _FAILED_NOUN
+        + _END,
+        # "It also hardens the labels check to distinguish a failed reviewer from a pending one."
+        _SUBJECT
+        + _SPACE
+        + r"(?:extends|updates|hardens|adds)(?P<free1>"
+        + _FREE
+        + r"{1,3})"
+        + _SPACE
+        + r"to"
+        + _SPACE
+        + r"distinguish"
+        + _SPACE
+        + r"an?"
+        + _SPACE
+        + r"(?P<masked>failed)"
+        + _SPACE
+        + _FAILED_NOUN
+        + _SPACE
+        + r"from"
+        + _SPACE
+        + r"an?(?P<free2>"
+        + _FREE
+        + r")"
+        + _SPACE
+        + r"one"
+        + _END,
+    )
+)
+#: The longest sentence :func:`_described` reads; a longer one is read like any other.
+_DESCRIPTION_MAX_CHARS = 400
+
+
+def _free_text_ok(found: re.Match[str]) -> bool:
+    """Return whether a template's free text and clause hold no connective.
+
+    The fixed-shape ", with ... tests updated" tail may join words with "and", but may not
+    deny a test (:data:`_TAIL_DENIALS`).
+
+    A ``clause`` must also be hypothetical (:data:`_HYPOTHETICAL`): "where X could hide
+    Y" states the hole the change closes; "that holds failed writes" may be a safeguard.
+    """
+    groups = found.groupdict()
+    tail = {w.lower() for w in (groups.get("tail") or "").split()}
+    if tail & _TAIL_DENIALS:  # "with no tests added": it says what is missing
+        return False
+    free = " ".join(v for k, v in groups.items() if k.startswith("free") and v)
+    clause = groups.get("clause") or ""
+    words = [w.strip("`").lower() for w in f"{free} {clause}".split()]
+    if any(w in _CONNECTIVES or w.endswith("n't") for w in words):
+        return False
+    return not clause or bool(_HYPOTHETICAL & {w.lower() for w in clause.split()})
+
+
+def _described(sentence: str) -> str:
+    """Return ``sentence`` with the words that only describe the change masked.
+
+    Only a whole sentence matching one of :data:`_DESCRIPTIONS` is masked: an allowlist
+    of narrow shapes, so an unforeseen phrasing leaves the sentence listed. Its free text
+    may hold only plain words with no connective (:func:`_free_text_ok`), and only its
+    ``masked`` part (the problem a closing verb removes, or "failed" naming what the
+    change now handles) is removed; any concern word left elsewhere still counts.
+    """
+    text = sentence.strip()
+    if len(text) > _DESCRIPTION_MAX_CHARS:
+        return sentence
+    for template in _DESCRIPTIONS:
+        found = template.fullmatch(text)
+        if found is not None and _free_text_ok(found):
+            start, end = found.span("masked")
+            return text[:start] + text[end:]
+    return sentence
+
+
 def names_concern(sentence: str) -> bool:
     """Whether one summary sentence names a concern, not only what the change does.
 
     A sentence names a concern when it has a :data:`_CONCERN_WORDS` word. When
-    in doubt it does: the one exception is a whole sentence that only says the
-    review found nothing of named review areas (:func:`says_nothing_found`:
-    "No bugs or security issues were found in the workflow configuration",
-    PRs #264-#266). "No issues were found, but the writer could lose rows",
-    "No other issues were found beyond the retry loop", "No high-severity
-    issues were found" and every failure word are still listed.
+    in doubt it does. Two exceptions: a whole sentence that only says the review found
+    nothing of named review areas (:func:`says_nothing_found`: "No bugs or security
+    issues were found in the workflow configuration", PRs #264-#266), and a sentence that
+    only describes what the change does or fixes (:func:`_described`: "This closes the
+    paths where a pull request's `.gitattributes` could hide changed content", "The
+    change extends loop metrics to capture failed model attempts", gtm_toolkit #264-#271).
+    "No issues were found, but the writer could lose rows", "This change adds a cache
+    that may serve stale scores" and every failure word outside those two shapes are
+    still listed.
     """
-    return not says_nothing_found(sentence) and bool(_CONCERN_WORDS.search(sentence))
+    if says_nothing_found(sentence):
+        return False
+    return bool(_CONCERN_WORDS.search(_described(sentence)))
 
 
 _SENTENCE_END = re.compile(r"(?<=[.!?])\s+")
