@@ -76,6 +76,8 @@ class Reviewer:
     dimensions: Mapping[str, str] = field(default_factory=dict)
     #: The reply's output-token limit, reasoning included (OpenAI-compatible APIs).
     max_output_tokens: int = 65_536
+    #: The prompt's instruction for the reply's ``summary`` ("" for the shared default).
+    summary: str = ""
 
 
 BUILT_IN = {
@@ -138,6 +140,7 @@ def resolve(name: str, overrides: Mapping[str, cfg.Reviewer]) -> Reviewer:
             base_url=own.base_url or base.base_url,
             key=own.key or base.key,
             dimensions=own.dimensions or base.dimensions,
+            summary=own.summary or base.summary,
         )
     if base.kind not in ("gemini", "openai", "anthropic"):
         raise ReviewError(f"reviewer {name!r} has kind {base.kind!r}")
@@ -161,7 +164,10 @@ def lens_for(root: Path, lenses_dir: str, name: str) -> str:
 def provider_for(reviewer: Reviewer, lens: str) -> Provider:
     """Return the :class:`Provider` for ``reviewer``: its names, error checks and lens."""
     dims = dict(reviewer.dimensions) or None
-    tags = "/".join(dims) if dims else ""
+    names = list(dims or ())
+    # Three or more tags read as a range ("D1-D9"), as gtm_toolkit's Reflection lens has them.
+    tags = f"{names[0]}-{names[-1]}" if len(names) > 2 else "/".join(names)
+    extra = {"summary_rule": reviewer.summary} if reviewer.summary else {}
     return Provider(
         name=reviewer.title,
         status_context=f"{reviewer.title} review",
@@ -179,6 +185,7 @@ def provider_for(reviewer: Reviewer, lens: str) -> Provider:
         if dims
         else "",
         dimensions=dims,
+        **extra,
     )
 
 
