@@ -29,7 +29,8 @@ devloop doctor --check    # check nothing has drifted; run this in CI
 - `devloop doctor [--check]`: list any problems. `--check` exits 1 if there are any.
 - `devloop size`: in CI, count a pull request's changed lines and fail one over
   `pr.max_lines`, unless it has the `pr.large_label` label. Skill copies and the paths
-  in `pr.exclude` are not counted.
+  in `pr.exclude` are not counted. `devloop size --base origin/main` measures the
+  committed branch locally, the same way.
 - `devloop changelog check|build`: check the changelog fragments in `changes/`, or add
   them to `CHANGELOG.md` (see [changes/README.md](changes/README.md)).
 - `devloop changes`: in CI, say whether a pull request changes only documentation, so

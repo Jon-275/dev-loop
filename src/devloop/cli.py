@@ -32,7 +32,7 @@ def _parser() -> argparse.ArgumentParser:
         ("init", "write devloop.toml if absent and render the layout for every tool"),
         ("sync", "re-render AGENTS.md blocks, skills and adapters from their sources"),
         ("doctor", "check the project is set up and nothing has drifted"),
-        ("size", "in CI, report a pull request's size and fail one over pr.max_lines"),
+        ("size", "report a pull request's size (or, with --base, a branch's) against pr.max_lines"),
         ("changelog", "check changelog fragments, or build them into the changelog"),
         ("changes", "in CI, say whether a pull request changes only documentation"),
         ("pr-open", "refuse a push to a branch whose PR already merged or closed"),
@@ -52,6 +52,8 @@ def _parser() -> argparse.ArgumentParser:
         if name in ("size", "changes"):
             event = os.environ.get("GITHUB_EVENT_NAME", "")
             sub.add_argument("--event", default=event, help="github.event_name")
+        if name == "size":
+            sub.add_argument("--base", help="measure this branch locally from where it left BASE")
         if name == "lessons":
             notes = os.environ.get("REVIEW_NOTES_DIR") or None
             sub.add_argument("--notes", type=Path, default=notes, help="council notes folder")
@@ -164,7 +166,7 @@ def _size(args: argparse.Namespace, root: Path) -> int:
     """Print the PR's size; return 1 only for an unapproved oversize PR."""
     config = load_config(root / CONFIG_FILE)
     code, lines = run_size(
-        args.event, os.environ.get("GITHUB_EVENT_PATH"), root, config, os.environ
+        args.event, os.environ.get("GITHUB_EVENT_PATH"), root, config, os.environ, args.base
     )
     print("\n".join(lines))
     if code:
