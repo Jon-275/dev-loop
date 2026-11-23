@@ -124,7 +124,7 @@ def devloop_toml(gtm: Path) -> str:
     effort = ", ".join(json.dumps(f"*{hint}*") for hint in core.CORE_LOGIC_HINTS)
     dims = ", ".join(f"{tag} = {json.dumps(text)}" for tag, text in reflection.DIMENSIONS.items())
     return f"""[framework]
-version = "0.4"
+version = "0.5"
 
 [review]
 files = [{files}]

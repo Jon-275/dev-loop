@@ -12,6 +12,50 @@
 
 ### Security
 
+## 0.5.0 - 2026-11-23
+
+### Added
+
+- **The `testing-and-ci` and `python-package` skills.** Generalised from gtm_toolkit's
+  testing and packaging skills: tests that fail when their fix is reverted, the installed
+  wheel checked outside the checkout, CI lanes that fail closed and never run pull request
+  code with secrets, and a typed package proven from its wheel.
+- **Council role cards.** One Markdown file per role in `council.roles_dir` (default
+  `devloop/council/`) says when the role is summoned (`summoned_by` globs and `tiers`),
+  which reviewer runs it, and its mandate, checks, severity anchors and proof methods.
+  `devloop council plan` prints the roles and reviewers a change summons; `devloop council
+  check` and `devloop doctor` report a bad card, a glob that matches no file, a decision
+  file that does not exist, and a council with more reviewers for a tier than
+  `council.max_reviewers` allows.
+- **A role library and the council skills.** devloop ships 17 role cards: six every
+  council starts with (architect, test and quality, security, operability, claims and
+  docs, editor) and eleven domain packs (ML and statistics, data engineering, CRM and
+  RevOps, GTM strategy, payments, regulated data, frontend UX, mobile, infrastructure, LLM
+  applications, public APIs), which fit the default reviewer budget together.
+  `devloop council library` lists them and `devloop council add <role>` copies one into
+  the project to specialise. The `council-review` skill reviews a change with the roles
+  its paths summon, every P0 and P1 proven by a command; `council-design` drafts a
+  project's council from its signals and the owner's answers and proves it on known
+  defects.
+- **The security model, council guide, cost model and upgrade guide.** The docs site now
+  says what a trusted review may and may not run, what each model vendor receives (devloop
+  does not redact secrets), why `.github/workflows/` needs code owners, how to write and
+  prove a council, what each push costs and which settings lower it, and how to upgrade.
+  Three framework decisions are recorded: every check fails closed, every finding gets a
+  labelled reply, and no finding or figure is hidden.
+- **A documentation site.** `mkdocs build --strict` builds `docs/` with no warnings, and
+  CI runs it on every pull request. New pages: concepts (the loop enforced in CI, risk
+  tiers, labels and lessons, metrics and what "aligned" means), adoption (install, shared
+  workflows, secrets, branch protection, agents' identity, the council), a configuration
+  reference for every `devloop.toml` key, and the skills devloop ships. Tests keep the
+  configuration page and the skills page exactly in line with the code.
+- **Eight workflow skills.** `pr-workflow`, `review-locally`, `address-review`,
+  `split-stack`, `stateful-change`, `decision-record`, `lessons-intake` and `release` ship
+  with devloop and render for every tool. A new project includes every shipped skill
+  (`skills.include` defaults to all of them). Each skill names no agent-specific tool,
+  every `devloop` command and flag it names exists, and each says when not to use it;
+  tests enforce all three.
+
 ## 0.4.0 - 2026-11-23
 
 ### Added
