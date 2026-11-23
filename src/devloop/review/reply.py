@@ -278,7 +278,7 @@ _CONNECTIVES = frozenset(
     "and or but then because when while if unless so as to though although yet except "
     "however whereas albeit nor otherwise also again still only until which with without "
     "instead forever never not no none nothing cannot can't don't doesn't isn't aren't "
-    "won't wasn't weren't by at for via using through of one alone today currently".split()
+    "won't wasn't weren't by at for via using through of one alone today currently despite".split()
 )
 #: The only words a ", with ... tests updated" tail may use: any other ("weakened",
 #: "deleted", "no") may say a check was lost. The tail is never masked.
@@ -413,8 +413,9 @@ def _described(sentence: str) -> str:
     Only a whole sentence matching one of :data:`_DESCRIPTIONS` is masked: an allowlist
     of narrow shapes, so an unforeseen phrasing leaves the sentence listed. Its free text
     may hold only plain words with no connective (:func:`_free_text_ok`), and only its
-    ``masked`` part (the problem a closing verb removes, or "failed" naming what the
-    change now handles) is removed; any concern word left elsewhere still counts.
+    ``masked`` part (the hole a closing verb removes, up to its damage verb, or "failed"
+    naming what the change now handles) is removed; any concern word left elsewhere,
+    after the damage verb included ("could leak despite tests failing"), still counts.
     """
     text = sentence.strip()
     if len(text) > _DESCRIPTION_MAX_CHARS:
@@ -423,6 +424,12 @@ def _described(sentence: str) -> str:
         found = template.fullmatch(text)
         if found is not None and _free_text_ok(found):
             start, end = found.span("masked")
+            clause = found.group("clause") if "clause" in found.re.groupindex else None
+            if clause:  # mask the hole up to its damage verb; the words after it stay read
+                lead = len(clause) - len(clause.lstrip())
+                harm = _HARM_CLAUSE.match(clause.lstrip())
+                if harm is not None:
+                    end = found.start("clause") + lead + harm.end()
             return text[:start] + text[end:]
     return sentence
 

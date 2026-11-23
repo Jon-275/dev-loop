@@ -53,6 +53,9 @@ STILL_LISTED = [
     "The job failed silently on the last run.",
     "The change could break callers of the old API.",
     "This closes the paths where tokens could leak, with no tests added.",
+    # Greptile on gtm_toolkit #272: words after the damage verb are not part of the hole
+    "This closes the gap where tokens could leak despite tests failing.",
+    "This closes the gap where tokens could leak into logs that are lost.",
     # Gemini on dev-loop #31: closing or preventing a safeguard is the concern
     "This prevents the check that could catch leaks.",
     "This closes the fallback that would recover failed writes.",
