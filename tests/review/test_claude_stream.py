@@ -214,3 +214,5 @@ def test_a_reply_cut_off_by_the_context_window_is_split_like_max_tokens() -> Non
 def test_a_custom_anthropic_reviewer_gets_the_anthropic_output_limit() -> None:
     own = {"sonnet": cfg.Reviewer(kind="anthropic", model="claude-sonnet-5-5")}
     assert providers.resolve("sonnet", own).max_output_tokens == 64_000
+    moved = {"reflection": cfg.Reviewer(kind="anthropic", model="claude-sonnet-5-5")}
+    assert providers.resolve("reflection", moved).max_output_tokens == 64_000
