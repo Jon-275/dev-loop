@@ -102,7 +102,8 @@ def seed_classes(seed: Mapping[str, Any]) -> list[LessonClass]:
 
     """
     source = str(seed.get("source") or "seed")
-    items = seed.get("classes") or []
+    items = seed.get("classes")
+    items = [] if items is None else items
     if not isinstance(items, list):
         raise LessonsError("the seed's classes must be a list")
     classes = []
@@ -112,7 +113,9 @@ def seed_classes(seed: Mapping[str, Any]) -> list[LessonClass]:
             isinstance(item.get(k), str) and item.get(k) for k in _FIELDS
         ):
             raise LessonsError(f"{where} needs a non-empty {', '.join(_FIELDS)}")
-        keywords, numbers = item.get("keywords") or [], item.get("prs") or []
+        keywords, numbers = item.get("keywords"), item.get("prs")
+        keywords = [] if keywords is None else keywords
+        numbers = [] if numbers is None else numbers
         if not isinstance(keywords, list) or not all(isinstance(k, str) and k for k in keywords):
             raise LessonsError(f"{where}: keywords must be a list of words")
         if not isinstance(numbers, list) or not all(
@@ -376,7 +379,7 @@ def main(root: Path, notes: Path | None) -> int:
             (root / rel).parent.mkdir(parents=True, exist_ok=True)
             (root / rel).write_text(text, encoding="utf-8")
         agents.write_text(out.agents, encoding="utf-8")
-    except OSError as error:
+    except (OSError, UnicodeError) as error:
         print(f"devloop lessons: could not write the outputs: {error}", file=sys.stderr)
         return 2
     print(f"Wrote the lessons to {settings.doc}, {settings.agents} and {review.lessons}")
