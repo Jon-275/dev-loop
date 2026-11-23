@@ -185,3 +185,13 @@ def test_replies_start_the_labels_check_without_the_model_keys() -> None:
     caller = _load("labels-replies.yml")
     assert sorted(_on(caller)) == ["pull_request_review", "pull_request_review_comment"]
     assert "secrets" not in str(caller) and "review.yml" not in str(caller)
+
+
+def test_metrics_are_read_only_and_fail_when_devloop_fails() -> None:
+    job = _load("metrics.yml")["jobs"]["metrics"]
+    assert job["permissions"] == {"contents": "read", "pull-requests": "read"}
+    measure = next(s for s in job["steps"] if s.get("name") == "Measure the window")
+    assert measure["run"].startswith("set -o pipefail")
+    weekly = _load("metrics-weekly.yml")
+    assert sorted(_on(weekly)) == ["schedule", "workflow_dispatch"]
+    assert weekly["jobs"]["metrics"]["uses"] == "./.github/workflows/metrics.yml"

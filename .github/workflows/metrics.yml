@@ -1,0 +1,74 @@
+# The review loop's weekly figures, shared by every project that uses devloop: time to
+# merge, size, finding threads by reviewer and severity, labels, precision, model tokens,
+# and every figure per authoring tool (`Agent:` commit trailers). See `devloop metrics`.
+#
+# Call it from a scheduled workflow:
+#
+#   on: { schedule: [{ cron: "30 6 * * 1" }], workflow_dispatch: {} }
+#   jobs:
+#     metrics:
+#       uses: Jon-275/dev-loop/.github/workflows/metrics.yml@<tag>
+#       permissions: { contents: read, pull-requests: read }
+#       with: { devloop: "git+https://github.com/Jon-275/dev-loop@<tag>" }
+#
+# Read-only: it reads pull requests and writes the report to the job summary and the
+# figures to an artifact, never to the repository.
+name: Review loop metrics
+
+on:
+  workflow_call:
+    inputs:
+      devloop:
+        description: Where to install devloop from (a uv requirement, or . in dev-loop itself)
+        required: true
+        type: string
+      days:
+        description: The window, in days
+        required: false
+        type: number
+        default: 7
+
+permissions:
+  contents: read
+
+jobs:
+  metrics:
+    name: Measure the review loop
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    permissions:
+      contents: read
+      pull-requests: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+
+      - uses: astral-sh/setup-uv@1db35dd8eee11c5894872e0b383ae6c406cf738d # v10.4.0
+        with:
+          version: "0.13.7"
+          python-version: "3.12.14"
+          enable-cache: false
+
+      - name: Install devloop
+        env:
+          DEVLOOP: ${{ inputs.devloop }}
+        run: uv tool install "$DEVLOOP"
+
+      - name: Measure the window
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          DAYS: ${{ inputs.days }}
+        # Without pipefail a failed devloop behind tee would pass.
+        run: |
+          set -o pipefail
+          mkdir -p work
+          devloop metrics --days "$DAYS" --json work/metrics.json | tee -a "$GITHUB_STEP_SUMMARY"
+
+      - name: Keep the figures
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: review-loop-metrics
+          path: work/metrics.json
+          if-no-files-found: error
+          retention-days: 90

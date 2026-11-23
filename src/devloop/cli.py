@@ -42,6 +42,7 @@ def _parser() -> argparse.ArgumentParser:
         ("labels", "in CI, check every review finding on a pull request has a labelled reply"),
         ("lessons", "rank the bug classes review found and write the lessons and rules"),
         ("metrics", "measure the review loop over the pull requests merged in a window"),
+        ("agent", "add the Agent: trailer to a commit message, or install its commit-msg hook"),
     ):
         sub = commands.add_parser(name, help=text)
         sub.add_argument("--root", type=Path, default=Path.cwd(), help="project root")
@@ -184,6 +185,10 @@ def main(argv: Sequence[str] | None = None) -> int:
     argv = list(sys.argv[1:] if argv is None else argv)
     if argv[:1] == ["pr-open"]:  # the guard parses its own arguments
         return pr_open.main(argv[1:])
+    if argv[:1] == ["agent"]:  # the hook parses its own arguments
+        from devloop.agent import main as agent_main
+
+        return agent_main(argv[1:])
     if argv[:1] == ["review"]:  # the review parses its own arguments
         from devloop.review.command import main as review_main
 
