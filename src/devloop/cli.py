@@ -39,6 +39,7 @@ def _parser() -> argparse.ArgumentParser:
         ("main-health", "on a push to main, open or close the workflow's 'main is red' issue"),
         ("review", "review a pull request with a model and post each finding as a thread"),
         ("feedback", "collect accepted and rejected review findings into review.feedback"),
+        ("labels", "in CI, check every review finding on a pull request has a labelled reply"),
     ):
         sub = commands.add_parser(name, help=text)
         sub.add_argument("--root", type=Path, default=Path.cwd(), help="project root")
@@ -185,6 +186,10 @@ def main(argv: Sequence[str] | None = None) -> int:
         from devloop.review.feedback import main as feedback_main
 
         return feedback_main(root, os.environ)
+    if args.command == "labels":
+        from devloop.review.labels import main as labels_main
+
+        return labels_main(root, os.environ)
     try:
         if args.command == "init":
             _report(init(root))

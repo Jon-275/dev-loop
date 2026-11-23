@@ -1,0 +1,24 @@
+# dev-loop's "Review labels" check when a thread gets a reply or a review is submitted.
+# These events run without the model keys (they are only in review-trusted.yml), and a
+# fork's events get a read-only token, so its replies are checked on the next push.
+name: Review labels on replies
+
+'on':
+  pull_request_review:
+    types: [submitted, edited, dismissed]
+  pull_request_review_comment:
+    types: [created, edited, deleted]
+
+permissions:
+  contents: read
+
+jobs:
+  labels:
+    uses: ./.github/workflows/labels.yml
+    permissions:
+      checks: read
+      contents: read
+      pull-requests: read
+      statuses: write
+    with:
+      devloop: "."

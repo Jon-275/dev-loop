@@ -18,3 +18,6 @@ skills_targets = [".claude/skills", ".agents/skills", ".github/skills"]
 [skills]
 include = ["devloop-setup"]
 project = "devloop/skills"
+
+[labels]
+wait_for = ["Gemini review", "Reflection review"]

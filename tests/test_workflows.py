@@ -166,3 +166,22 @@ def test_dev_loop_reviews_itself_on_pull_request_target_from_the_base_branch() -
         job = caller["jobs"][name]
         assert job["uses"] == "./.github/workflows/review.yml"
         assert job["with"] == {"provider": name, "devloop": "."}
+    labels = caller["jobs"]["labels"]
+    assert labels["uses"] == "./.github/workflows/labels.yml" and "always()" in labels["if"]
+    assert sorted(labels["needs"]) == ["gemini", "reflection"]
+
+
+def test_the_labels_check_marks_pending_first_and_reports_a_run_that_posted_nothing() -> None:
+    steps = _load("labels.yml")["jobs"]["labels"]["steps"]
+    assert "state=pending" in steps[0]["run"]
+    checkout = steps[1]["with"]
+    assert checkout["ref"] == "${{ github.event.repository.default_branch }}"
+    assert steps[-1]["if"].startswith("failure() && steps.check.outputs.posted != 'true'")
+    job = _load("labels.yml")["jobs"]["labels"]
+    assert job["permissions"]["statuses"] == "write" and "secrets" not in str(job)
+
+
+def test_replies_start_the_labels_check_without_the_model_keys() -> None:
+    caller = _load("labels-replies.yml")
+    assert sorted(_on(caller)) == ["pull_request_review", "pull_request_review_comment"]
+    assert "secrets" not in str(caller) and "review.yml" not in str(caller)

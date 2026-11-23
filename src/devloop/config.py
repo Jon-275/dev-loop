@@ -115,9 +115,15 @@ class Review:
 
 @dataclass(frozen=True)
 class Labels:
-    """``[labels]``: the prefixes a review-thread reply must start with."""
+    """``[labels]``: the label words a reply starts with, and the reviews to wait for.
+
+    ``devloop labels`` stays pending until every commit status in ``wait_for`` and every
+    check run in ``wait_for_checks`` has finished on the head.
+    """
 
     prefixes: tuple[str, ...] = ("accepted", "rejected")
+    wait_for: tuple[str, ...] = ()
+    wait_for_checks: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -253,7 +259,7 @@ def parse_config(text: str) -> Config:
             "reviewers",
         },
     )
-    labels = _table(data, "labels", {"prefixes"})
+    labels = _table(data, "labels", {"prefixes", "wait_for", "wait_for_checks"})
     agents = _table(data, "agents", {"tools", "skills_targets"})
     skills = _table(data, "skills", {"include", "project"})
     council = _table(data, "council", {"roles_dir", "max_reviewers", "require_status"})
@@ -282,7 +288,13 @@ def parse_config(text: str) -> Config:
             lessons=_optional_path(review, "review.lessons", "lessons"),
             reviewers=_reviewers(_table(review, "reviewers", None)),
         ),
-        labels=Labels(prefixes=_prefixes(labels, d_lab.prefixes)),
+        labels=Labels(
+            prefixes=_prefixes(labels, d_lab.prefixes),
+            wait_for=_strs(labels, "labels.wait_for", "wait_for", d_lab.wait_for),
+            wait_for_checks=_strs(
+                labels, "labels.wait_for_checks", "wait_for_checks", d_lab.wait_for_checks
+            ),
+        ),
         agents=Agents(tools=_tools(agents, d_ag.tools), skills_targets=_targets(agents, d_ag)),
         skills=Skills(
             include=_strs(skills, "skills.include", "include", d_sk.include),
