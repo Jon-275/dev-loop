@@ -43,6 +43,7 @@ def _parser() -> argparse.ArgumentParser:
         ("lessons", "rank the bug classes review found and write the lessons and rules"),
         ("metrics", "measure the review loop over the pull requests merged in a window"),
         ("agent", "add the Agent: trailer to a commit message, or install its commit-msg hook"),
+        ("council", "check the council's role cards, or plan which roles review a change"),
     ):
         sub = commands.add_parser(name, help=text)
         sub.add_argument("--root", type=Path, default=Path.cwd(), help="project root")
@@ -189,6 +190,10 @@ def main(argv: Sequence[str] | None = None) -> int:
         from devloop.agent import main as agent_main
 
         return agent_main(argv[1:])
+    if argv[:1] == ["council"]:  # the council parses its own arguments
+        from devloop.council import main as council_main
+
+        return council_main(argv[1:])
     if argv[:1] == ["review"]:  # the review parses its own arguments
         from devloop.review.command import main as review_main
 
