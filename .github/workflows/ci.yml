@@ -34,6 +34,7 @@ jobs:
       - run: .venv/bin/ruff format --check .
       - run: .venv/bin/mypy
       - run: .venv/bin/python -m pytest
+      - run: .venv/bin/mkdocs build --strict --site-dir "$RUNNER_TEMP/site"
 
   # dev-loop runs its own shared workflows, installing devloop from this checkout.
   hygiene:

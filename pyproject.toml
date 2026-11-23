@@ -24,6 +24,7 @@ dev = [
     "pyyaml>=6,<7",
     "types-pyyaml>=6,<7",
     "anthropic>=1",
+    "mkdocs>=1.6,<2",
 ]
 
 [build-system]

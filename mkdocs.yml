@@ -1,0 +1,20 @@
+site_name: dev-loop
+site_description: A standard review and delivery loop across coding agents.
+repo_url: https://github.com/Jon-275/dev-loop
+strict: true
+validation:
+  omitted_files: warn
+  absolute_links: warn
+  unrecognized_links: warn
+  anchors: warn
+nav:
+  - Home: index.md
+  - Concepts: concepts.md
+  - Adoption: adoption.md
+  - Configuration: configuration.md
+  - Skills: skills.md
+  - Model reviews: review.md
+  - Tool matrix: tool-matrix.md
+  - Decisions:
+      - Enforce in git and CI: decisions/0001-enforce-in-git-and-ci.md
+      - Model reviews: decisions/0002-model-reviews.md
