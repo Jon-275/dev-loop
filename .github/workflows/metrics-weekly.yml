@@ -1,0 +1,19 @@
+# dev-loop's own weekly review loop metrics, through its shared metrics.yml.
+name: Weekly review loop metrics
+
+'on':
+  schedule:
+    - cron: "30 6 * * 1" # Mondays 06:30 UTC
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  metrics:
+    uses: ./.github/workflows/metrics.yml
+    permissions:
+      contents: read
+      pull-requests: read
+    with:
+      devloop: "."

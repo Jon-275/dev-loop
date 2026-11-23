@@ -20,6 +20,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
+from devloop.agent import agent_of
 from devloop.review import feedback as fb
 
 #: Another reviewer's thread this close on the same file is the same finding.
@@ -72,7 +73,7 @@ query($search: String!, $after: String) {
         commits(last: 100) {
           totalCount
           pageInfo { hasPreviousPage }
-          nodes { commit { oid status { contexts { context state targetUrl } } } }
+          nodes { commit { oid message status { contexts { context state targetUrl } } } }
         }
         reviews(first: 50) {
           pageInfo { hasNextPage }
@@ -130,6 +131,11 @@ class PullRequest:
     unmeasured_runs: dict[str, int] = field(default_factory=dict)
     #: Threads, comments or reviews beyond the first page (not counted).
     truncated: bool = False
+    #: The tool that wrote it, from its commits' ``Agent:`` trailers: one tool, ``mixed``
+    #: when they name several, ``unknown`` when none has one (a person, or no trailer).
+    agent: str = "unknown"
+    #: Review rounds: the commits a devloop reviewer posted a summary on.
+    rounds: int = 0
 
     @property
     def hours(self) -> float:
@@ -193,8 +199,12 @@ def pull_request_from(node: Mapping[str, Any], names: Names) -> PullRequest:
                 totals = pr.tokens.setdefault(reviewer, [0, 0, 0, 0])
                 for index, value in enumerate((given, made, unreported, failed)):
                     totals[index] += value
+    commits = [c["commit"] for c in node["commits"].get("nodes", [])]
+    tools = {tool for c in commits if (tool := agent_of(str(c.get("message") or "")))}
+    pr.agent = tools.pop() if len(tools) == 1 else "mixed" if tools else "unknown"
+    pr.rounds = len({oid for _, oid in summarised})
     counted: set[tuple[str, str]] = set()  # one latest status per reviewer and commit
-    for commit in (c["commit"] for c in node["commits"].get("nodes", [])):
+    for commit in commits:
         for status in (commit.get("status") or {}).get("contexts", []):
             name = names.statuses.get(str(status.get("context")))
             oid = str(commit.get("oid"))
@@ -331,6 +341,22 @@ def summarise(prs: Sequence[PullRequest], names: Names, max_lines: int = 800) ->
             }
         )
     labelled = sum(t.outcome is not None for t in threads)
+    by_tool = {}
+    for tool in sorted({pr.agent for pr in prs}):
+        group = [pr for pr in prs if pr.agent == tool]
+        mine = [t for pr in group for t in pr.threads]
+        judged = [t for t in mine if t.outcome in ("accepted", "rejected")]
+        by_tool[tool] = {
+            "prs": len(group),
+            "median_hours": _round(_median(pr.hours for pr in group)),
+            "median_threads": _median(len(pr.threads) for pr in group),
+            "median_rounds": _median(pr.rounds for pr in group),
+            "rejected_share": round(sum(t.outcome == "rejected" for t in judged) / len(judged), 3)
+            if judged
+            else None,
+            "median_lines": _median(pr.lines for pr in group),
+            "over_max_lines": sum(pr.lines > max_lines for pr in group),
+        }
     return {
         "prs": len(prs),
         "median_hours": _round(_median(pr.hours for pr in prs)),
@@ -343,6 +369,7 @@ def summarise(prs: Sequence[PullRequest], names: Names, max_lines: int = 800) ->
         "over_max_lines": [pr.number for pr in prs if pr.lines > max_lines],
         "app_reviews": sum(pr.app_reviews for pr in prs),
         "reviewers": reviewers,
+        "by_tool": by_tool,
         "sizes": sizes,
         "not_counted": {
             "truncated_prs": [pr.number for pr in prs if pr.truncated],
@@ -392,6 +419,24 @@ def render(data: Mapping[str, Any], since: datetime, until: datetime) -> str:
             f"| {r['unlabelled']} | {num(r['precision'])} | {r['unique_accepted']} "
             f"| {num(r['input_tokens'])}{low} | {num(r['output_tokens'])}{low} |"
         )
+    lines += [
+        "",
+        "## By authoring tool",
+        "",
+        "From each pull request's `Agent:` commit trailers: `mixed` when its commits name "
+        "several tools, `unknown` when none has one. Rejected share is rejected of labelled "
+        "findings.",
+        "",
+        "| Tool | PRs | Median hours | Median threads | Median rounds | Rejected share "
+        f"| Median lines | Over {data['max_lines']} |",
+        "|---|---|---|---|---|---|---|---|",
+        *(
+            f"| {tool} | {t['prs']} | {num(t['median_hours'])} | {num(t['median_threads'])} "
+            f"| {num(t['median_rounds'])} | {num(t['rejected_share'])} "
+            f"| {num(t['median_lines'])} | {t['over_max_lines']} |"
+            for tool, t in data["by_tool"].items()
+        ),
+    ]
     lines += [
         "",
         "## By size",

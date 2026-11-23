@@ -97,3 +97,12 @@ collaborator counts.
   `review.feedback`. The reviewers learn from it: recent decisions become prompt
   examples, and a finding rejected three times is suppressed (listed in the summary, never
   a thread; a P1 never).
+
+## Metrics
+
+`devloop metrics --days 7` measures the review loop over the pull requests merged in the
+window: time to merge, size against `pr.max_lines`, finding threads by reviewer and
+severity, labels and precision, model tokens, and every figure **per authoring tool**. A
+pull request's tool comes from its commits' `Agent: <tool>/<model>` trailers, which the
+`commit-msg` hook adds when `DEVLOOP_AGENT` is set (`devloop agent --install`). Call
+[`metrics.yml`](../.github/workflows/metrics.yml) from a weekly workflow.

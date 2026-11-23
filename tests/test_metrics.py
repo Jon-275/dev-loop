@@ -305,6 +305,41 @@ def test_the_saved_json_records_its_period(tmp_path: Path, monkeypatch: pytest.M
     assert until - since == timedelta(days=3) and since.tzinfo is not None
 
 
+def _tool_commit(oid: str, agent: str = "") -> dict[str, Any]:
+    """Return a commit node whose message carries ``Agent: agent`` when given."""
+    trailer = f"\n\nAgent: {agent}" if agent else ""
+    return {"commit": {"oid": oid, "message": f"feat: x{trailer}", "status": {"contexts": []}}}
+
+
+def test_figures_are_reported_per_authoring_tool() -> None:
+    summary = {"author": {"login": "github-actions"}, "body": "<!-- gemini-review findings=1 -->"}
+    prs = [
+        _from(
+            _node(
+                1,
+                _thread(_gemini(), _reply("rejected: no")),
+                commits=[_tool_commit("a", "codex/gpt-5"), _tool_commit("b", "codex/gpt-5")],
+                reviews=[{**summary, "commit": {"oid": "a"}}, {**summary, "commit": {"oid": "b"}}],
+            )
+        ),
+        _from(_node(2, commits=[_tool_commit("c", "claude-code/opus-5.5")], additions=900)),
+        _from(
+            _node(3, commits=[_tool_commit("d", "codex/gpt-5"), _tool_commit("e", "claude-code/x")])
+        ),
+        _from(_node(4, commits=[_tool_commit("f")])),
+    ]
+    assert [pr.agent for pr in prs] == ["codex", "claude-code", "mixed", "unknown"]
+    assert prs[0].rounds == 2
+    data = metrics.summarise(prs, NAMES)
+    codex = data["by_tool"]["codex"]
+    assert (codex["prs"], codex["median_rounds"], codex["rejected_share"]) == (1, 2, 1.0)
+    assert data["by_tool"]["claude-code"]["over_max_lines"] == 1
+    assert data["by_tool"]["unknown"]["rejected_share"] is None  # nothing judged, not 0
+    text = metrics.render(data, T0, T0 + timedelta(days=7))
+    assert "## By authoring tool" in text
+    assert "| codex | 1 | 2.0 | 1.0 | 2.0 | 1.0 | 100.0 | 0 |" in text
+
+
 def test_one_failed_status_per_reviewer_and_commit_is_counted_once() -> None:
     commit = _commit("a", run="5", Gemini="FAILURE")
     contexts = commit["commit"]["status"]["contexts"] * 2
