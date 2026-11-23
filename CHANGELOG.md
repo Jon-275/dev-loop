@@ -12,6 +12,44 @@
 
 ### Security
 
+## 0.4.0 - 2026-11-23
+
+### Added
+
+- **Metrics per authoring tool.** `devloop agent --install` adds a `commit-msg` hook that
+  appends an `Agent: <tool>/<model>` trailer when `DEVLOOP_AGENT` is set (it never blocks a
+  commit), and `devloop metrics` reports each tool's pull requests, time to merge, threads,
+  review rounds, rejected share and size. The shared `metrics.yml` runs it weekly; dev-loop
+  runs it on itself.
+- **`devloop feedback`.** Collects what maintainers did with review findings into the
+  `review.feedback` store: a resolved finding thread with a member's labelled reply
+  (`labels.prefixes`, such as `accepted:` or `rejected:`) becomes a record, and a finding
+  rejected three times is suppressed (never a P1). Nothing is written when any read fails,
+  and an unreadable store is never overwritten. Ported from gtm_toolkit.
+- **`devloop labels` and `labels.yml`.** The "Review labels" status: every review finding
+  on a pull request needs a member's labelled reply, resolved or not, and the status stays
+  pending until every review in `labels.wait_for` and `labels.wait_for_checks` has
+  finished. A failed read posts a failure, never a pass. dev-loop checks its own pull
+  requests with it. Ported from gtm_toolkit.
+- **`devloop lessons`.** Ranks the bug classes review found (seeded in `lessons.seed`,
+  counted from accepted findings in `review.feedback` and council notes) and writes the
+  lessons page (`lessons.doc`), the top 10 rules into `lessons.agents` between the
+  `lessons:start` and `lessons:end` markers, and the patterns every reviewer checks first
+  (`review.lessons`). An input that exists but cannot be read writes nothing. Ported from
+  gtm_toolkit.
+- **`devloop metrics`.** Measures the review loop over the pull requests merged in a window:
+  time to merge, size against `pr.max_lines`, finding threads by reviewer and severity,
+  labels, precision, unique accepted findings, review app reviews and model tokens. Nothing
+  is dropped silently: truncated pull requests and unmeasured tokens are named. Ported
+  from gtm_toolkit.
+
+### Fixed
+
+- **A concern after a closed hole is still listed.** "This closes the gap where tokens
+  could leak despite tests failing" was read as a description; only the hole up to its
+  damage verb is masked now, so a concern word after it still lists the sentence
+  (Greptile on gtm_toolkit #272).
+
 ## 0.3.1 - 2026-11-23
 
 ### Added
