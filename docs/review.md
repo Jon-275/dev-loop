@@ -80,3 +80,20 @@ byte; the findings are matched by severity, file and line within five. With `--f
 compares prompts only and calls no model. In CI, run the "Replay a gtm_toolkit pull
 request" workflow by hand; it needs the `GTM_READ_TOKEN` secret and reports counts and
 prompt hashes only, since this repository's logs are public.
+
+## Labels and feedback
+
+Reply to every finding thread in one line that starts with a label word
+(`labels.prefixes`, by default `accepted:` when the finding was right and `rejected:` when
+it was wrong), then resolve it. Only a labelled reply from a repository owner, member or
+collaborator counts.
+
+- `devloop labels` posts the "Review labels" status: it fails while any finding thread,
+  resolved or not, has no labelled reply, and stays pending until every review in
+  `labels.wait_for` (statuses) and `labels.wait_for_checks` (check runs) has finished.
+  Call [`labels.yml`](../.github/workflows/labels.yml) after the review jobs and on
+  review replies.
+- `devloop feedback` collects the labelled threads of recently merged pull requests into
+  `review.feedback`. The reviewers learn from it: recent decisions become prompt
+  examples, and a finding rejected three times is suppressed (listed in the summary, never
+  a thread; a P1 never).

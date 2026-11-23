@@ -34,3 +34,16 @@ jobs:
       devloop: "."
     secrets:
       api_key: ${{ secrets.REFLECTION_API_KEY }}
+
+  # After the reviews, so their threads are read. Replies are checked by labels-replies.yml.
+  labels:
+    needs: [gemini, reflection]
+    if: always()
+    uses: ./.github/workflows/labels.yml
+    permissions:
+      checks: read
+      contents: read
+      pull-requests: read
+      statuses: write
+    with:
+      devloop: "."
