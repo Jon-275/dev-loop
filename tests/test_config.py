@@ -136,3 +136,69 @@ def test_changelog_settings_are_read() -> None:
     assert cfg.changelog.sections == {"added": "New"}
     assert cfg.changelog.code == ("packages/*",)
     assert parse_config('[framework]\nversion = "0.1"\n').changelog.file == "CHANGELOG.md"
+
+
+REVIEW = """
+[framework]
+version = "0.3"
+
+[review]
+providers = { 1 = ["greptile", "gemini", "reflection"], 3 = ["greptile"] }
+blocking_severities = ["P1", "P2", "P3"]
+files = ["*.py", "*.yml"]
+high_effort = ["src/**/model*"]
+feedback = "data/review_feedback.json"
+lessons = "data/review_lessons.json"
+
+[review.reviewers.reflection]
+kind = "openai"
+model = "Beam-1.0-501B-A23B"
+base_url = "https://api.reflection.ai/openai/v1"
+key = "REFLECTION_API_KEY"
+dimensions = { D1 = "Revenue alignment", D2 = "RevOps data hygiene" }
+"""
+
+
+def test_review_settings_and_reviewers_are_read() -> None:
+    review = parse_config(REVIEW).review
+    assert review.providers == {1: ("greptile", "gemini", "reflection"), 3: ("greptile",)}
+    assert review.blocking_severities == ("P1", "P2", "P3")
+    assert review.files == ("*.py", "*.yml")
+    assert review.high_effort == ("src/**/model*",)
+    assert (review.feedback, review.lessons) == (
+        "data/review_feedback.json",
+        "data/review_lessons.json",
+    )
+    reflection = review.reviewers["reflection"]
+    assert reflection.kind == "openai" and reflection.key == "REFLECTION_API_KEY"
+    assert reflection.base_url == "https://api.reflection.ai/openai/v1"
+    assert reflection.dimensions == {"D1": "Revenue alignment", "D2": "RevOps data hygiene"}
+
+
+def test_review_defaults_review_code_and_block_on_p1_and_p2() -> None:
+    review = parse_config('[framework]\nversion = "0.3"\n').review
+    assert review.blocking_severities == ("P1", "P2")
+    assert "*.py" in review.files and "*.md" not in review.files
+    assert review.high_effort == ("*",)
+    assert review.feedback == review.lessons == ""
+    assert review.reviewers == {}
+
+
+@pytest.mark.parametrize(
+    ("body", "message"),
+    [
+        ('blocking_severities = ["P0"]', r"P0"),
+        ('feedback = "../x.json"', r"review\.feedback.*inside"),
+        ("files = []", r"review\.files"),
+        ('[review.reviewers.x]\nkind = "llama"', r"review\.reviewers\.x\.kind"),
+        ('[review.reviewers.x]\nmodel = "m"', r"review\.reviewers\.x\.kind"),
+        ('[review.reviewers.Bad]\nkind = "openai"', r"review\.reviewers\.Bad"),
+        ('[review.reviewers.x]\nkind = "openai"\ncolour = 1', r"review\.reviewers\.x\.colour"),
+        ('[review.reviewers.x]\nkind = "openai"\nbase_url = "http://a"', r"https"),
+        ('[review.reviewers.x]\nkind = "openai"\nkey = "lower"', r"key"),
+        ('[review.reviewers.x]\nkind = "openai"\ndimensions = { D1 = "" }', r"dimensions"),
+    ],
+)
+def test_invalid_review_settings_are_rejected(body: str, message: str) -> None:
+    with pytest.raises(ConfigError, match=message):
+        parse_config(f'[framework]\nversion = "0.3"\n[review]\n{body}\n')
