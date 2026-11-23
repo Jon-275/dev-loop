@@ -1,0 +1,104 @@
+# Replay a gtm_toolkit pull request through gtm_toolkit's own reviewers and devloop's, and
+# compare them (scripts/replay.py): the prompts must be identical, and the findings, which
+# come from a model, are matched by severity, file and nearby line.
+#
+# gtm_toolkit is private and this repository is public, so its logs are public: the
+# replay reports counts and prompt hashes only (--public), nothing is uploaded, and the
+# pull request's code never leaves the runner. Run by hand: it needs GTM_READ_TOKEN, a
+# fine-grained token that can read gtm_toolkit's contents and pull requests, and it uses
+# the model keys, so it costs up to four model requests per reviewer.
+name: Replay a gtm_toolkit pull request
+
+'on':
+  workflow_dispatch:
+    inputs:
+      pr:
+        description: The gtm_toolkit pull request number
+        required: true
+        type: string
+      providers:
+        description: The reviewers to compare
+        required: true
+        default: gemini,reflection
+        type: string
+      fake:
+        description: Compare prompts only, with no model request
+        required: true
+        default: false
+        type: boolean
+
+permissions:
+  contents: read
+
+jobs:
+  replay:
+    name: Replay
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          path: devloop
+          persist-credentials: false
+
+      - name: Find the pull request's base and head
+        id: pr
+        env:
+          GH_TOKEN: ${{ secrets.GTM_READ_TOKEN }}
+          PR: ${{ inputs.pr }}
+        run: |
+          case "$PR" in (*[!0-9]*|'') echo "::error::pr must be a number"; exit 1;; esac
+          gh pr view "$PR" --repo Jon-275/gtm_toolkit --json baseRefOid,headRefOid \
+            --jq '"base=\(.baseRefOid)\nhead=\(.headRefOid)"' >> "$GITHUB_OUTPUT"
+
+      - name: Check out the pull request's head, with history
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          repository: Jon-275/gtm_toolkit
+          token: ${{ secrets.GTM_READ_TOKEN }}
+          ref: ${{ steps.pr.outputs.head }}
+          path: pr
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Take gtm_toolkit's review scripts and data from its main
+        working-directory: pr
+        run: |
+          mkdir -p ../gtm/scripts ../gtm/data
+          for f in review_core gemini_pr_review reflection_pr_review; do
+            git show "origin/main:scripts/$f.py" > "../gtm/scripts/$f.py"
+          done
+          for f in review_feedback review_lessons; do
+            git show "origin/main:data/$f.json" > "../gtm/data/$f.json" || rm -f "../gtm/data/$f.json"
+          done
+
+      - uses: astral-sh/setup-uv@1db35dd8eee11c5894872e0b383ae6c406cf738d # v10.4.0
+        with:
+          version: "0.13.7"
+          python-version: "3.12.14"
+          enable-cache: false
+
+      - name: Install devloop and gtm_toolkit's review dependencies
+        run: |
+          uv venv -q venv
+          uv pip install -q --python venv ./devloop \
+            "google-genai>=1.50,<2" "openai>=1.50,<2" "requests>=2.31,<3"
+
+      - name: Replay
+        working-directory: pr
+        env:
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          REFLECTION_API_KEY: ${{ secrets.REFLECTION_API_KEY }}
+          BASE: ${{ steps.pr.outputs.base }}
+          PROVIDERS: ${{ inputs.providers }}
+          FAKE: ${{ inputs.fake }}
+        run: |
+          flag=""
+          if [ "$FAKE" = "true" ]; then flag="--fake"; fi
+          set +e
+          ../venv/bin/python ../devloop/scripts/replay.py --gtm ../gtm --base "$BASE" \
+            --providers "$PROVIDERS" --out ../out --public $flag
+          status=$?
+          set -e
+          cat ../out/replay.md >> "$GITHUB_STEP_SUMMARY"
+          exit "$status"

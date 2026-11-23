@@ -230,3 +230,29 @@ def test_post_json_turns_an_error_status_into_a_model_error(
     assert caught.value.status == 503 and caught.value.codes() == ["busy"]
     assert not http.is_retryable_status(caught.value)
     assert seen[0].unredirected_hdrs == {"X-api-key": "secret"}
+
+
+def test_a_reviewer_can_set_its_summary_rule_and_its_tags_read_as_a_range() -> None:
+    dims = {f"D{n}": f"dimension {n}" for n in range(1, 10)}
+    rule = "summary: what the findings mean for the business; do not say it is safe to merge."
+    own = {"reflection": cfg.Reviewer(dimensions=dims, summary=rule)}
+    provider = providers.provider_for(providers.resolve("reflection", own), "lens")
+    assert provider.summary_rule == rule
+    assert (
+        provider.finding_fields == "- dimension: the one D1-D9 tag above the finding belongs to.\n"
+    )
+    two = providers.provider_for(
+        providers.resolve(
+            "reflection", {"reflection": cfg.Reviewer(dimensions={"A": "a", "B": "b"})}
+        ),
+        "lens",
+    )
+    assert "the one A/B tag" in two.finding_fields
+    assert providers.provider_for(GEMINI, "lens").summary_rule.startswith("summary: two or three")
+
+
+def test_the_summary_rule_is_read_from_the_config() -> None:
+    config = cfg.parse_config(
+        '[framework]\nversion = "0.3"\n[review.reviewers.reflection]\nsummary = "summary: s."\n'
+    )
+    assert config.review.reviewers["reflection"].summary == "summary: s."

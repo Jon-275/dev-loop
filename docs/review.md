@@ -18,6 +18,7 @@ model = "my-model"
 base_url = "https://llm.example.com/v1"
 key = "MINE_API_KEY"
 dimensions = { D1 = "Revenue alignment" }   # optional tags each finding must carry
+summary = "summary: two or three sentences on what changed; do not say it is safe to merge."
 ```
 
 A reviewer's lens, the opening of its prompt, is `<review.lenses_dir>/<name>.md` when
@@ -70,3 +71,12 @@ It prints the summary and each finding and posts nothing.
 
 Each summary ends with the requests and tokens the review used, and a hidden
 `<!-- model-usage: ... -->` marker with the same counts and the run's id.
+
+## Replaying gtm_toolkit's reviews
+
+`scripts/replay.py` runs one gtm_toolkit pull request through gtm_toolkit's own
+reviewers and devloop's, with nothing posted. The prompts must be identical byte for
+byte; the findings are matched by severity, file and line within five. With `--fake` it
+compares prompts only and calls no model. In CI, run the "Replay a gtm_toolkit pull
+request" workflow by hand; it needs the `GTM_READ_TOKEN` secret and reports counts and
+prompt hashes only, since this repository's logs are public.

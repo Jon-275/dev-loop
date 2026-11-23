@@ -91,6 +91,8 @@ class Reviewer:
     base_url: str = ""
     key: str = ""
     dimensions: dict[str, str] = field(default_factory=dict)
+    #: The prompt's instruction for the reply's ``summary`` field ("" for the default).
+    summary: str = ""
 
 
 @dataclass(frozen=True)
@@ -404,7 +406,7 @@ def _reviewers(table: Mapping[str, Any]) -> dict[str, Reviewer]:
         if not isinstance(entry, dict):
             raise ConfigError(f"[{where}] must be a table")
         for key in entry:
-            if key not in {"kind", "model", "base_url", "key", "dimensions"}:
+            if key not in {"kind", "model", "base_url", "key", "dimensions", "summary"}:
                 raise ConfigError(f"unknown key {where}.{key} in {CONFIG_FILE}")
         kind = _str(entry, f"{where}.kind", "kind", BUILT_IN_REVIEWERS.get(name, "-"))
         if kind not in REVIEWER_KINDS:
@@ -421,7 +423,8 @@ def _reviewers(table: Mapping[str, Any]) -> dict[str, Reviewer]:
             isinstance(v, str) and v and re.fullmatch(r"[A-Za-z0-9]+", k) for k, v in dims.items()
         ):
             raise ConfigError(f"{where}.dimensions must be a table of TAG = name")
-        reviewers[name] = Reviewer(kind, model, url, key, dict(dims))
+        summary = _str(entry, f"{where}.summary", "summary", "-") if "summary" in entry else ""
+        reviewers[name] = Reviewer(kind, model, url, key, dict(dims), summary)
     return reviewers
 
 
