@@ -214,16 +214,22 @@ def pull_request_from(node: Mapping[str, Any], names: Names) -> PullRequest:
     tools = {tool for c in commits if (tool := agent_of(str(c.get("message") or "")))}
     pr.agent = tools.pop() if len(tools) == 1 else "mixed" if tools else "unknown"
     pr.rounds = len({oid for _, oid in summarised})
+    counted: set[tuple[str, str]] = set()  # one latest status per reviewer and commit
     for commit in commits:
         for status in (commit.get("status") or {}).get("contexts", []):
             name = names.statuses.get(str(status.get("context")))
-            if name and status.get("state") in UNFINISHED_STATES:
-                runs = summarised.get((name, str(commit.get("oid"))), set())
-                run = RUN_URL_RE.search(str(status.get("targetUrl") or ""))
-                # By run id when both sides name one; a side without an id matches by commit.
-                measured = (run.group(1) in runs or "" in runs) if run else bool(runs)
-                if not measured:
-                    pr.unmeasured_runs[name] = pr.unmeasured_runs.get(name, 0) + 1
+            oid = str(commit.get("oid"))
+            if not name or (name, oid) in counted or status.get("state") not in UNFINISHED_STATES:
+                continue
+            counted.add((name, oid))
+            runs = summarised.get((name, oid), set())
+            run = RUN_URL_RE.search(str(status.get("targetUrl") or ""))
+            # A status that names its run is measured only by a summary naming that run: a
+            # summary with no run id may be another run's, so it never covers a named one.
+            # A status naming no run can only be matched by its commit.
+            measured = run.group(1) in runs if run else bool(runs)
+            if not measured:
+                pr.unmeasured_runs[name] = pr.unmeasured_runs.get(name, 0) + 1
     for node_thread in threads["nodes"]:
         pr.truncated |= bool(node_thread["comments"]["pageInfo"]["hasNextPage"])
         if (found := thread_from(node_thread, names)) is not None:
@@ -338,7 +344,7 @@ def summarise(prs: Sequence[PullRequest], names: Names, max_lines: int = 800) ->
         group = [pr for pr in prs if pr.lines >= low and (high is None or pr.lines < high)]
         sizes.append(
             {
-                "lines": f"{low}+" if high is None else f"{low}-{high}",
+                "lines": f"{low}+" if high is None else f"{low}-{high - 1}",
                 "prs": len(group),
                 "median_hours": _round(_median(pr.hours for pr in group)),
                 "median_threads": _median(len(pr.threads) for pr in group),
