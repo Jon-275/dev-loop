@@ -103,3 +103,28 @@ def test_another_tools_hook_is_never_replaced(
         os.chdir(cwd)
     assert "another commit-msg hook" in capsys.readouterr().err
     assert hook.read_text() == "#!/bin/sh\nexit 0\n"
+
+
+def test_an_invalid_trailer_already_there_is_never_reported_as_added(tmp_path: Path) -> None:
+    msg = tmp_path / "MSG"
+    msg.write_text("feat: x\n\nAgent: not valid\n")
+    assert not agent.add_trailer(msg, "codex/gpt-5")
+    assert msg.read_text() == "feat: x\n\nAgent: not valid\n"
+
+
+def test_pre_commits_legacy_hook_from_another_tool_is_never_replaced(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    from devloop.pr_open import PRE_COMMIT_MARKER
+
+    run(tmp_path, "init", "-q")
+    hooks = tmp_path / ".git" / "hooks"
+    (hooks / "commit-msg").write_text(f"#!/bin/sh\n{PRE_COMMIT_MARKER}\n")
+    (hooks / "commit-msg.legacy").write_text("#!/bin/sh\necho theirs\n")
+    cwd = Path.cwd()
+    os.chdir(tmp_path)
+    try:
+        assert agent.install() == 2
+    finally:
+        os.chdir(cwd)
+    assert (hooks / "commit-msg.legacy").read_text() == "#!/bin/sh\necho theirs\n"

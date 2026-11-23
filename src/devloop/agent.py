@@ -43,9 +43,11 @@ def agent_of(message: str) -> str | None:
 def add_trailer(path: Path, agent: str, run: Runner = subprocess.run) -> bool:
     """Add ``Agent: agent`` to the commit message at ``path``; return whether it was added.
 
-    Nothing is added for an invalid value or a message that already has the trailer.
+    Nothing is added for an invalid value or a message with any ``Agent:`` trailer, valid
+    or not; the result says whether the file really changed.
     """
-    if not AGENT.fullmatch(agent) or agent_of(path.read_text(encoding="utf-8")) is not None:
+    before = path.read_text(encoding="utf-8")
+    if not AGENT.fullmatch(agent) or _LINE.search(before.strip().split("\n\n")[-1]):
         return False
     done = run(
         [
@@ -62,7 +64,7 @@ def add_trailer(path: Path, agent: str, run: Runner = subprocess.run) -> bool:
         text=True,
         check=False,
     )
-    return done.returncode == 0
+    return done.returncode == 0 and path.read_text(encoding="utf-8") != before
 
 
 def install(run: Runner = subprocess.run) -> int:
@@ -86,8 +88,9 @@ def install(run: Runner = subprocess.run) -> int:
     if target.exists():
         text = target.read_text(encoding="utf-8", errors="replace")
         if PRE_COMMIT_MARKER in text:
-            target = hooks / "commit-msg.legacy"
-        elif HOOK_MARKER not in text:
+            target = hooks / "commit-msg.legacy"  # pre-commit runs it first
+            text = target.read_text(encoding="utf-8", errors="replace") if target.exists() else ""
+        if text and HOOK_MARKER not in text:
             print(
                 f"error: {target} is another commit-msg hook; not replacing it. Call "
                 '`devloop agent --commit-msg "$1"` from it.',
