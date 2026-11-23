@@ -121,8 +121,17 @@ def test_the_command_writes_the_three_outputs(
         {"classes": [{**SEED["classes"][0], "prs": ["seven"]}]},
         {"classes": [{**SEED["classes"][0], "keywords": "race"}]},
         {"classes": "none"},
+        {"classes": ""},
+        {"classes": [{**SEED["classes"][0], "keywords": ""}]},
     ],
-    ids=["missing-field", "bad-prs", "bad-keywords", "not-a-list"],
+    ids=[
+        "missing-field",
+        "bad-prs",
+        "bad-keywords",
+        "not-a-list",
+        "empty-string",
+        "falsy-keywords",
+    ],
 )
 def test_a_malformed_seed_is_a_lessons_error(seed: dict[str, Any]) -> None:
     with pytest.raises(ls.LessonsError):
