@@ -1,6 +1,8 @@
 {
   "files": [
     ".agents/skills/address-review/SKILL.md",
+    ".agents/skills/council-design/SKILL.md",
+    ".agents/skills/council-review/SKILL.md",
     ".agents/skills/decision-record/SKILL.md",
     ".agents/skills/devloop-setup/SKILL.md",
     ".agents/skills/lessons-intake/SKILL.md",
@@ -10,6 +12,8 @@
     ".agents/skills/split-stack/SKILL.md",
     ".agents/skills/stateful-change/SKILL.md",
     ".claude/skills/address-review/SKILL.md",
+    ".claude/skills/council-design/SKILL.md",
+    ".claude/skills/council-review/SKILL.md",
     ".claude/skills/decision-record/SKILL.md",
     ".claude/skills/devloop-setup/SKILL.md",
     ".claude/skills/lessons-intake/SKILL.md",
@@ -19,6 +23,8 @@
     ".claude/skills/split-stack/SKILL.md",
     ".claude/skills/stateful-change/SKILL.md",
     ".github/skills/address-review/SKILL.md",
+    ".github/skills/council-design/SKILL.md",
+    ".github/skills/council-review/SKILL.md",
     ".github/skills/decision-record/SKILL.md",
     ".github/skills/devloop-setup/SKILL.md",
     ".github/skills/lessons-intake/SKILL.md",

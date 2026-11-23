@@ -21,6 +21,7 @@ def test_installed_wheel_initialises_a_doctor_clean_repo(tmp_path: Path) -> None
     assert "devloop/templates/AGENTS.md" in names
     assert "devloop/skills/devloop-setup/SKILL.md" in names
     assert "devloop/templates/hooks/pre-push" in names
+    assert "devloop/council_library/architect.md" in names
     env = tmp_path / "env"
     venv.create(env, with_pip=False)
     bin_dir = env / ("Scripts" if sys.platform == "win32" else "bin")
@@ -37,3 +38,9 @@ def test_installed_wheel_initialises_a_doctor_clean_repo(tmp_path: Path) -> None
     )
     assert done.returncode == 0, done.stdout + done.stderr
     assert "healthy" in done.stdout
+    added = subprocess.run(
+        [devloop, "council", "add", "--root", str(repo), "architect"],
+        capture_output=True,
+        text=True,
+    )
+    assert added.returncode == 0, added.stdout + added.stderr
