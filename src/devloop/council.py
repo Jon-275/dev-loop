@@ -262,8 +262,8 @@ def main(argv: Sequence[str]) -> int:
             sub.add_argument("--base", default="origin/main", help="the branch's base")
             sub.add_argument("--paths", nargs="*", help="the changed files (default: git)")
     args = parser.parse_args(list(argv))
-    root: Path = args.root.resolve()
     try:
+        root: Path = args.root.resolve()
         config = load_config(root / CONFIG_FILE)
         if args.action == "check":
             found = problems(root, config)
@@ -274,7 +274,13 @@ def main(argv: Sequence[str]) -> int:
         label = config.council.roles_dir
         cards = load_cards(root / label, label)
         paths = args.paths if args.paths is not None else _changed(root, args.base)
-    except (ConfigError, CouncilError, subprocess.CalledProcessError) as error:
+    except (
+        ConfigError,
+        CouncilError,
+        OSError,
+        UnicodeDecodeError,
+        subprocess.CalledProcessError,
+    ) as error:
         print(f"devloop council: {error}", file=sys.stderr)
         return 2
     chosen = plan(cards, paths, pr_tier(paths, config.tiers))
