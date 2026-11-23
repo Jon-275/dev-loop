@@ -112,3 +112,27 @@ def test_the_command_writes_the_three_outputs(
     assert main(["lessons", "--root", str(tmp_path)]) == 2
     assert "nothing written" in capsys.readouterr().err
     assert (tmp_path / "AGENTS.md").read_text() == before
+
+
+@pytest.mark.parametrize(
+    "seed",
+    [
+        {"classes": [{"id": "x"}]},
+        {"classes": [{**SEED["classes"][0], "prs": ["seven"]}]},
+        {"classes": [{**SEED["classes"][0], "keywords": "race"}]},
+        {"classes": "none"},
+    ],
+    ids=["missing-field", "bad-prs", "bad-keywords", "not-a-list"],
+)
+def test_a_malformed_seed_is_a_lessons_error(seed: dict[str, Any]) -> None:
+    with pytest.raises(ls.LessonsError):
+        ls.seed_classes(seed)
+
+
+def test_inputs_that_are_not_utf_8_or_not_files_never_crash(tmp_path: Path) -> None:
+    (tmp_path / "latin.json").write_bytes(b'{"x": "caf\xe9"}')
+    with pytest.raises(ls.LessonsError, match="cannot be read"):
+        ls.load_json(tmp_path / "latin.json")
+    (tmp_path / "review-pr1.md").mkdir()
+    (tmp_path / "review-pr2.md").write_text("### P1-1 A race \u2014 caf\u00e9\n", encoding="utf-8")
+    assert ls.note_findings(tmp_path) == [("A race \u2014 caf\u00e9", 2)]

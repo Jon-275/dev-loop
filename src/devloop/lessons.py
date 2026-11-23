@@ -84,19 +84,42 @@ def load_json(path: Path) -> dict[str, Any]:
         data = json.loads(path.read_text(encoding="utf-8"))
     except FileNotFoundError:
         return {}
-    except (OSError, json.JSONDecodeError) as error:
+    except (OSError, UnicodeDecodeError, json.JSONDecodeError) as error:
         raise LessonsError(f"{path} cannot be read: {error}") from None
     if not isinstance(data, dict):
         raise LessonsError(f"{path} is not a JSON object")
     return data
 
 
+_FIELDS = ("id", "title", "rule", "bad", "good")
+
+
 def seed_classes(seed: Mapping[str, Any]) -> list[LessonClass]:
-    """Return the seeded classes; each seeded PR counts once."""
+    """Return the seeded classes; each seeded PR counts once.
+
+    Raises:
+        LessonsError: a class lacks a text field, or its keywords or PRs are malformed.
+
+    """
     source = str(seed.get("source") or "seed")
+    items = seed.get("classes") or []
+    if not isinstance(items, list):
+        raise LessonsError("the seed's classes must be a list")
     classes = []
-    for item in seed.get("classes") or []:
-        prs = {int(n) for n in item.get("prs") or []}
+    for index, item in enumerate(items):
+        where = f"seed class {index}"
+        if not isinstance(item, dict) or not all(
+            isinstance(item.get(k), str) and item.get(k) for k in _FIELDS
+        ):
+            raise LessonsError(f"{where} needs a non-empty {', '.join(_FIELDS)}")
+        keywords, numbers = item.get("keywords") or [], item.get("prs") or []
+        if not isinstance(keywords, list) or not all(isinstance(k, str) and k for k in keywords):
+            raise LessonsError(f"{where}: keywords must be a list of words")
+        if not isinstance(numbers, list) or not all(
+            isinstance(n, int) and not isinstance(n, bool) and n > 0 for n in numbers
+        ):
+            raise LessonsError(f"{where}: prs must be a list of pull request numbers")
+        prs = set(numbers)
         classes.append(
             LessonClass(
                 id=item["id"],
@@ -104,7 +127,7 @@ def seed_classes(seed: Mapping[str, Any]) -> list[LessonClass]:
                 rule=item["rule"],
                 bad=item["bad"],
                 good=item["good"],
-                keywords=tuple(k.lower() for k in item.get("keywords") or []),
+                keywords=tuple(k.lower() for k in keywords),
                 prs=prs,
                 seen=len(prs),
                 sources={source} if prs else set(),
@@ -122,10 +145,13 @@ def note_findings(folder: Path | None) -> list[tuple[str, int | None]]:
         return []
     found: list[tuple[str, int | None]] = []
     for pattern in NOTE_FILES:
-        for path in sorted(folder.glob(pattern)):
+        for path in sorted(p for p in folder.glob(pattern) if p.is_file()):
             number = re.search(r"pr(\d+)", path.name)
             pr = int(number.group(1)) if number else None
-            found += [(m.group(2).strip(), pr) for m in NOTE_FINDING.finditer(path.read_text())]
+            found += [
+                (m.group(2).strip(), pr)
+                for m in NOTE_FINDING.finditer(path.read_text(encoding="utf-8"))
+            ]
     return found
 
 
@@ -342,12 +368,16 @@ def main(root: Path, notes: Path | None) -> int:
         seed = load_json(root / settings.seed)
         store = load_json(root / review.feedback) if review.feedback else {}
         out = render(seed, store, agents.read_text(encoding="utf-8"), notes, settings)
-    except (LessonsError, OSError) as error:
+    except (LessonsError, OSError, UnicodeDecodeError) as error:
         print(f"devloop lessons: {error}; nothing written", file=sys.stderr)
         return 2
-    for rel, text in ((settings.doc, out.doc), (review.lessons, out.patterns)):
-        (root / rel).parent.mkdir(parents=True, exist_ok=True)
-        (root / rel).write_text(text, encoding="utf-8")
-    agents.write_text(out.agents, encoding="utf-8")
+    try:
+        for rel, text in ((settings.doc, out.doc), (review.lessons, out.patterns)):
+            (root / rel).parent.mkdir(parents=True, exist_ok=True)
+            (root / rel).write_text(text, encoding="utf-8")
+        agents.write_text(out.agents, encoding="utf-8")
+    except OSError as error:
+        print(f"devloop lessons: could not write the outputs: {error}", file=sys.stderr)
+        return 2
     print(f"Wrote the lessons to {settings.doc}, {settings.agents} and {review.lessons}")
     return 0
