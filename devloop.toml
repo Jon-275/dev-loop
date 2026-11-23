@@ -1,7 +1,7 @@
 # devloop configuration: the only place this project differs from the framework.
 
 [framework]
-version = "0.2"
+version = "0.3"
 
 [pr]
 max_lines = 800
