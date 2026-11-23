@@ -12,7 +12,7 @@ stack before writing code, not after.
 
 1. **Measure.** The limit is `pr.max_lines` in `devloop.toml`, counting added plus deleted
    lines, with generated and lock files left out. On a finished branch,
-   `git diff --shortstat origin/main...HEAD` gives the size.
+   `devloop size --base origin/main` gives the size as CI counts it.
 2. **Cut by concern, in dependency order.** Each PR must build, pass every gate and be
    useful or harmless on its own once merged. Good cuts:
    - a pure function or data model with its tests, before the code that calls it;

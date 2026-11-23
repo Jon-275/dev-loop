@@ -20,8 +20,9 @@ gets a change through them first time.
    `devloop doctor --check` when you touched skills, `AGENTS.md` or `devloop.toml`.
 5. **Add a changelog fragment** under the changelog folder (`changes/` by default), named
    `<slug>.<section>.md`, and check it with `devloop changelog check`.
-6. **Check the size** with `git diff --shortstat origin/main...HEAD`. Over the project's
-   `pr.max_lines` (generated and lock files excluded), stop and run `split-stack`.
+6. **Check the size** with `devloop size --base origin/main`, which counts the committed
+   branch with the same exclusions CI uses. Over `pr.max_lines`, stop and run
+   `split-stack`.
 7. **Review locally** with the `review-locally` skill and fix what it finds.
 8. **Commit** with a conventional message (`feat:`, `fix:`, `docs:`, `chore:`), then run
    `devloop pr-open` before pushing: never push to a branch whose PR already merged or

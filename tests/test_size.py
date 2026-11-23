@@ -291,3 +291,48 @@ def test_retiring_a_skill_does_not_count_its_deleted_copies(merge_repo: MergeRep
     changed[".devloop/manifest.json"] = json.dumps({"files": []})
     out = _run(merge_repo(changed, base=base))[1]
     assert out[0].startswith("Counted: 300 changed lines")
+
+
+def _on_pr_branch(repo: Path) -> Path:
+    """Check out the fixture's PR branch; ``main^1`` is main before it merged the PR."""
+    from conftest import git
+
+    git(repo, "checkout", "-q", "pr")
+    return repo
+
+
+def test_a_local_branch_is_measured_from_where_it_left_its_base(merge_repo: MergeRepo) -> None:
+    """--base counts only the branch's own commits, with the same exclusions as CI."""
+    repo = _on_pr_branch(merge_repo({"a.py": lines(40), "uv.lock": lines(500)}))
+    cfg = replace(CFG, pr=PR(max_lines=100, exclude=("uv.lock",)))
+    code, out = run("", None, repo, cfg, NO_API, base="main^1")
+    assert code == 0
+    assert out[0] == "Counted: 40 changed lines (added + deleted) in 1 files."
+    assert "     500  uv.lock: matches pr.exclude 'uv.lock'" in out
+    assert out[-1] == "Within the limit: 40 of 100 lines."
+
+
+def test_a_local_branch_over_the_limit_exits_one_and_says_how_to_split(
+    merge_repo: MergeRepo,
+) -> None:
+    repo = _on_pr_branch(merge_repo({"a.py": lines(101)}))
+    code, out = run("", None, repo, CFG, NO_API, base="main^1")
+    assert code == 1
+    assert "101 lines, over the 100-line limit" in out[-1]
+    assert "large-pr-approved" in out[-1]
+
+
+def test_a_local_base_that_does_not_exist_is_an_error(merge_repo: MergeRepo) -> None:
+    repo = _on_pr_branch(merge_repo({"a.py": lines(10)}))
+    code, out = run("", None, repo, CFG, NO_API, base="no-such-branch")
+    assert code == 2
+    assert out == ["devloop size: cannot compare with no-such-branch; is it fetched?"]
+
+
+def test_the_command_takes_a_local_base(
+    merge_repo: MergeRepo, capsys: pytest.CaptureFixture[str]
+) -> None:
+    repo = _on_pr_branch(merge_repo({"a.py": lines(10)}))
+    (repo / "devloop.toml").write_text('[framework]\nversion = "0.5"\n', encoding="utf-8")
+    assert main(["size", "--root", str(repo), "--base", "main^1"]) == 0
+    assert "Counted: 10 changed lines" in capsys.readouterr().out

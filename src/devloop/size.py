@@ -26,7 +26,9 @@ from devloop.sync import MANIFEST
 TOP_FILES = 10
 SYNC_REASON = "written by devloop sync"
 _HUNK = re.compile(r"^@@ -(\d+)(?:,\d+)? \+(\d+)(?:,\d+)? @@")
-_DIFF = ("--no-ext-diff", "--no-textconv", "--no-renames", "HEAD^1", "HEAD")
+_OPTIONS = ("--no-ext-diff", "--no-textconv", "--no-renames")
+#: In CI, the merge ref's first parent (the base) and the merge itself.
+MERGE_REF = ("HEAD^1", "HEAD")
 
 
 @dataclass(frozen=True)
@@ -62,10 +64,13 @@ class Size:
         return sum(item.lines for item in self.excluded)
 
 
-def _numstat(root: Path) -> list[FileCount]:
-    """Return each file's added and deleted lines on the merge ref; binary files count 0."""
+def _numstat(root: Path, revs: tuple[str, str]) -> list[FileCount]:
+    """Return each file's added and deleted lines from ``revs[0]`` to ``revs[1]``.
+
+    A binary file counts 0.
+    """
     counts = []
-    for record in git(root, "diff", "--numstat", "-z", *_DIFF).split("\0"):
+    for record in git(root, "diff", "--numstat", "-z", *_OPTIONS, *revs).split("\0"):
         if record:
             added, deleted, path = record.split("\t", 2)
             counts.append(
@@ -78,14 +83,14 @@ def _numstat(root: Path) -> list[FileCount]:
     return counts
 
 
-def _synced(root: Path, targets: Sequence[str]) -> set[str]:
+def _synced(root: Path, targets: Sequence[str], revs: tuple[str, str]) -> set[str]:
     """Return the skill copies devloop sync wrote, before or after the PR, and the manifest.
 
     Both manifests count, so retiring a skill does not count its deleted copies. Only
     entries inside a skills target count, so a manifest cannot hide other files.
     """
     synced = {MANIFEST}
-    for revision in ("HEAD^1", "HEAD"):
+    for revision in revs:
         try:
             files = json.loads(file_at(root, revision, MANIFEST) or '{"files": []}')["files"]
         except (ValueError, KeyError, TypeError):
@@ -130,11 +135,14 @@ def _changed_lines(diff: str) -> tuple[list[int], list[int]]:
     return deleted, added
 
 
-def _split_block(root: Path, item: FileCount, block: ExcludeBlock) -> list[FileCount]:
+def _split_block(
+    root: Path, item: FileCount, block: ExcludeBlock, revs: tuple[str, str]
+) -> list[FileCount]:
     """Split ``item`` into the lines outside its marked block and those inside."""
-    deleted, added = _changed_lines(git(root, "diff", "-U0", *_DIFF, "--", item.path))
-    old = _block_lines(file_at(root, "HEAD^1", item.path), block.start, block.end)
-    new = _block_lines(file_at(root, "HEAD", item.path), block.start, block.end)
+    diff = git(root, "diff", "-U0", *_OPTIONS, *revs, "--", item.path)
+    deleted, added = _changed_lines(diff)
+    old = _block_lines(file_at(root, revs[0], item.path), block.start, block.end)
+    new = _block_lines(file_at(root, revs[1], item.path), block.start, block.end)
     in_deleted = sum(1 for n in deleted if n in old)
     in_added = sum(1 for n in added if n in new)
     parts = [
@@ -154,20 +162,25 @@ def _reason(path: str, patterns: Sequence[str], synced: set[str]) -> str:
     return ""
 
 
-def measure(root: Path, config: Config) -> Size | None:
-    """Sort the PR's changes into counted and excluded; None when HEAD is not a merge ref."""
-    if not is_merge_ref(root):
-        return None
-    synced = _synced(root, config.agents.skills_targets)
+def measure(root: Path, config: Config, revs: tuple[str, str] | None = None) -> Size | None:
+    """Sort a change into counted and excluded lines; None when HEAD is not a merge ref.
+
+    ``revs`` (old, new) measures that range instead of the merge ref, as a local run does.
+    """
+    if revs is None:
+        if not is_merge_ref(root):
+            return None
+        revs = MERGE_REF
+    synced = _synced(root, config.agents.skills_targets, revs)
     blocks = {b.path: b for b in config.pr.exclude_blocks}
     counted: list[FileCount] = []
     excluded: list[FileCount] = []
-    for item in _numstat(root):
+    for item in _numstat(root, revs):
         reason = _reason(item.path, config.pr.exclude, synced)
         if reason:
             excluded.append(FileCount(item.path, item.added, item.deleted, reason))
         elif item.path in blocks and item.lines:
-            for part in _split_block(root, item, blocks[item.path]):
+            for part in _split_block(root, item, blocks[item.path], revs):
                 (excluded if part.reason else counted).append(part)
         else:
             counted.append(item)
@@ -206,13 +219,38 @@ def verdict(size: Size, labels: set[str] | None, config: Config) -> tuple[int, s
     )
 
 
-def run(
-    event: str, event_path: str | None, root: Path, config: Config, env: Mapping[str, str]
-) -> tuple[int, list[str]]:
-    """Return (exit code, output lines) for ``event``; every doubt exits 0.
+def local(root: Path, config: Config, base: str) -> tuple[int, list[str]]:
+    """Measure the committed branch from where it left ``base``: 1 over the limit, 2 on error.
 
-    Labels are read only for a PR over the limit, the one case where they matter.
+    The same exclusions as in CI apply. Labels are not read: over the limit, split the
+    change or, if it cannot be split, label its pull request.
     """
+    try:
+        old = git(root, "merge-base", base, "HEAD").strip()
+    except (OSError, subprocess.CalledProcessError):
+        return 2, [f"devloop size: cannot compare with {base}; is it fetched?"]
+    size = measure(root, config, (old, "HEAD"))
+    if size is None:  # never: an explicit range is always measured
+        return 2, [f"devloop size: cannot measure the branch from {base}"]
+    code, message = verdict(size, set(), config)
+    return code, [*report(size), message]
+
+
+def run(
+    event: str,
+    event_path: str | None,
+    root: Path,
+    config: Config,
+    env: Mapping[str, str],
+    base: str | None = None,
+) -> tuple[int, list[str]]:
+    """Return (exit code, output lines) for ``event``; in CI every doubt exits 0.
+
+    Labels are read only for a PR over the limit, the one case where they matter. With
+    ``base``, the committed branch is measured locally instead (:func:`local`).
+    """
+    if base is not None:
+        return local(root, config, base)
     if event != "pull_request":
         return 0, [f"devloop size: not a pull request ({event or 'no event'}); nothing to do."]
     try:
