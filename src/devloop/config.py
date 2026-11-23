@@ -150,11 +150,25 @@ class Agents:
     skills_targets: tuple[str, ...] = (".claude/skills", ".agents/skills", ".github/skills")
 
 
+#: The framework skills a new project renders: every skill devloop ships.
+DEFAULT_SKILLS: tuple[str, ...] = (
+    "address-review",
+    "decision-record",
+    "devloop-setup",
+    "lessons-intake",
+    "pr-workflow",
+    "release",
+    "review-locally",
+    "split-stack",
+    "stateful-change",
+)
+
+
 @dataclass(frozen=True)
 class Skills:
     """``[skills]``: framework skills to render, and the project's own skills folder."""
 
-    include: tuple[str, ...] = ("devloop-setup",)
+    include: tuple[str, ...] = DEFAULT_SKILLS
     project: str = "devloop/skills"
 
 
