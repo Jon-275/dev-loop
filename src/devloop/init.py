@@ -5,7 +5,7 @@ from __future__ import annotations
 from pathlib import Path
 
 from devloop import __version__
-from devloop.config import CONFIG_FILE, Agents, load_config
+from devloop.config import CONFIG_FILE, DEFAULT_SKILLS, Agents, load_config
 from devloop.sync import Change, apply
 
 
@@ -36,7 +36,7 @@ tools = {_quoted(agents.tools)}
 skills_targets = {_quoted(agents.skills_targets)}
 
 [skills]
-include = ["devloop-setup"]
+include = {_quoted(DEFAULT_SKILLS)}
 project = "devloop/skills"
 """
 

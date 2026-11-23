@@ -1,7 +1,31 @@
 {
   "files": [
+    ".agents/skills/address-review/SKILL.md",
+    ".agents/skills/decision-record/SKILL.md",
     ".agents/skills/devloop-setup/SKILL.md",
+    ".agents/skills/lessons-intake/SKILL.md",
+    ".agents/skills/pr-workflow/SKILL.md",
+    ".agents/skills/release/SKILL.md",
+    ".agents/skills/review-locally/SKILL.md",
+    ".agents/skills/split-stack/SKILL.md",
+    ".agents/skills/stateful-change/SKILL.md",
+    ".claude/skills/address-review/SKILL.md",
+    ".claude/skills/decision-record/SKILL.md",
     ".claude/skills/devloop-setup/SKILL.md",
-    ".github/skills/devloop-setup/SKILL.md"
+    ".claude/skills/lessons-intake/SKILL.md",
+    ".claude/skills/pr-workflow/SKILL.md",
+    ".claude/skills/release/SKILL.md",
+    ".claude/skills/review-locally/SKILL.md",
+    ".claude/skills/split-stack/SKILL.md",
+    ".claude/skills/stateful-change/SKILL.md",
+    ".github/skills/address-review/SKILL.md",
+    ".github/skills/decision-record/SKILL.md",
+    ".github/skills/devloop-setup/SKILL.md",
+    ".github/skills/lessons-intake/SKILL.md",
+    ".github/skills/pr-workflow/SKILL.md",
+    ".github/skills/release/SKILL.md",
+    ".github/skills/review-locally/SKILL.md",
+    ".github/skills/split-stack/SKILL.md",
+    ".github/skills/stateful-change/SKILL.md"
   ]
 }
