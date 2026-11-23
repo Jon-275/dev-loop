@@ -13,8 +13,15 @@ nav:
   - Adoption: adoption.md
   - Configuration: configuration.md
   - Skills: skills.md
+  - Council: council.md
+  - Security model: security.md
+  - Cost model: cost.md
+  - Upgrading: upgrading.md
   - Model reviews: review.md
   - Tool matrix: tool-matrix.md
   - Decisions:
       - Enforce in git and CI: decisions/0001-enforce-in-git-and-ci.md
       - Model reviews: decisions/0002-model-reviews.md
+      - Fail closed: decisions/0003-fail-closed.md
+      - Label every finding: decisions/0004-label-every-finding.md
+      - Never hide a figure: decisions/0005-never-hide-a-figure.md
