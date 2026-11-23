@@ -36,6 +36,7 @@ import sys
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from fnmatch import fnmatchcase
+from importlib import resources
 from pathlib import Path
 
 from devloop.config import CONFIG_FILE, Config, ConfigError, load_config
@@ -46,6 +47,8 @@ REQUIRED = ("Mandate", "Checks", "Severity anchors", "Proof methods")
 FIELDS = (*REQUIRED, "Decisions enforced", "Out of scope", "Known false positives")
 _SLUG = re.compile(r"^[a-z0-9]+(-[a-z0-9]+)*$")
 _LINE = re.compile(r"^([A-Z][A-Za-z ]*):(?: (.*))?$")
+#: The library roles every project's council starts with; the rest are domain packs.
+ALWAYS = ("architect", "test-quality", "security", "operability", "claims-docs", "editor")
 _SKIP_DIRS = frozenset({".git", ".venv", "node_modules", "__pycache__"})
 
 
@@ -187,6 +190,43 @@ def load_cards(folder: Path, label: str = "") -> dict[str, RoleCard]:
     return cards
 
 
+def _library_texts() -> dict[str, str]:
+    """Return the text of every role card devloop ships, keyed by name."""
+    folder = resources.files("devloop").joinpath("council_library")
+    return {
+        entry.name.removesuffix(".md"): entry.read_text(encoding="utf-8")
+        for entry in sorted(folder.iterdir(), key=lambda e: e.name)
+        if entry.name.endswith(".md")
+    }
+
+
+def library() -> dict[str, RoleCard]:
+    """Return the role library devloop ships: the always-present roles and the packs."""
+    return {name: parse_card(text, name) for name, text in _library_texts().items()}
+
+
+def add(root: Path, names: Sequence[str]) -> list[str]:
+    """Copy library cards into the project's council; return the files written.
+
+    Nothing is written unless every name is a library role with no card yet.
+
+    Raises:
+        CouncilError: a name is not in the library, or the project already has its card.
+
+    """
+    folder = load_config(root / CONFIG_FILE).council.roles_dir
+    texts = _library_texts()
+    for name in names:
+        if name not in texts:
+            raise CouncilError(f"no library role {name!r}; `devloop council library` lists them")
+        if (root / folder / f"{name}.md").exists():
+            raise CouncilError(f"{folder}/{name}.md exists; not replacing it")
+    (root / folder).mkdir(parents=True, exist_ok=True)
+    for name in names:
+        (root / folder / f"{name}.md").write_text(texts[name], encoding="utf-8")
+    return [f"{folder}/{name}.md" for name in names]
+
+
 def plan(cards: Mapping[str, RoleCard], paths: Sequence[str], tier: int) -> Plan:
     """Return the roles a tier-``tier`` change to ``paths`` summons, grouped by reviewer."""
     roles = tuple(
@@ -250,20 +290,35 @@ def _changed(root: Path, base: str) -> list[str]:
 
 
 def main(argv: Sequence[str]) -> int:
-    """Run ``devloop council``: ``check`` the cards, or ``plan`` who reviews a change."""
+    """Run ``devloop council``: check, plan, list the library or add library roles."""
     from devloop.review.run import pr_tier
 
     parser = argparse.ArgumentParser(prog="devloop council", description=__doc__.split("\n")[0])
     actions = parser.add_subparsers(dest="action", required=True)
-    for action, text in (("check", "report every council problem"), ("plan", "who reviews")):
+    for action, text in (
+        ("check", "report every council problem"),
+        ("plan", "print the roles and reviewers a change summons"),
+        ("library", "list the roles devloop ships"),
+        ("add", "copy library roles into this project's council"),
+    ):
         sub = actions.add_parser(action, help=text)
         sub.add_argument("--root", type=Path, default=Path.cwd(), help="project root")
         if action == "plan":
             sub.add_argument("--base", default="origin/main", help="the branch's base")
             sub.add_argument("--paths", nargs="*", help="the changed files (default: git)")
+        if action == "add":
+            sub.add_argument("roles", nargs="+", help="library role names")
     args = parser.parse_args(list(argv))
+    if args.action == "library":
+        for name, card in library().items():
+            print(f"{'always' if name in ALWAYS else 'pack  '}  {name}  {card.title}")
+        return 0
     try:
         root: Path = args.root.resolve()
+        if args.action == "add":
+            for path in add(root, args.roles):
+                print(f"created {path}")
+            return 0
         config = load_config(root / CONFIG_FILE)
         if args.action == "check":
             found = problems(root, config)

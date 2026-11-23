@@ -153,6 +153,8 @@ class Agents:
 #: The framework skills a new project renders: every skill devloop ships.
 DEFAULT_SKILLS: tuple[str, ...] = (
     "address-review",
+    "council-design",
+    "council-review",
     "decision-record",
     "devloop-setup",
     "lessons-intake",

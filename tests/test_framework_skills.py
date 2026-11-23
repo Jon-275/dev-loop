@@ -33,10 +33,10 @@ def _body(name: str) -> str:
     return SKILLS[name].files["SKILL.md"].decode("utf-8")
 
 
-def _help(command: str, capsys: pytest.CaptureFixture[str]) -> str:
+def _help(command: list[str], capsys: pytest.CaptureFixture[str]) -> str:
     with pytest.raises(SystemExit) as done:
-        cli.main([command, "--help"])
-    assert done.value.code == 0, f"devloop {command} --help failed"
+        cli.main([*command, "--help"])
+    assert done.value.code == 0, f"devloop {' '.join(command)} --help failed"
     return capsys.readouterr().out
 
 
@@ -65,7 +65,9 @@ def test_every_devloop_command_a_skill_names_exists(
     name: str, capsys: pytest.CaptureFixture[str]
 ) -> None:
     for command, rest in COMMAND.findall(_body(name)):
-        text = _help(command, capsys)
+        words = rest.split()
+        actions = words[: next((i for i, w in enumerate(words) if w[:1] in "-<"), len(words))]
+        text = _help([command, *actions], capsys)
         for flag in re.findall(r"--[a-z][a-z-]*", rest):
             assert flag in text, f"{name}: `devloop {command}` has no {flag}"
 
