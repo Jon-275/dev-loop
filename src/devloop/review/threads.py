@@ -64,7 +64,7 @@ def _marker_pattern(prefix: str) -> re.Pattern[str]:
     return re.compile(rf"<!-- {re.escape(prefix)}:([0-9a-f]{{16}})(?: line=(\d+))? -->")
 
 
-_ANY_BOT_MARKER = re.compile(r"<!-- ([a-z]+-finding):[0-9a-f]{16}(?: line=\d+)? -->")
+_ANY_BOT_MARKER = re.compile(r"<!-- ([a-z][a-z0-9-]*-finding):[0-9a-f]{16}(?: line=\d+)? -->")
 
 
 def finding_heading(provider: Provider, finding: Finding) -> str:

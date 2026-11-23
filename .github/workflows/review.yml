@@ -56,6 +56,22 @@ jobs:
       group: devloop-review-${{ inputs.provider }}-${{ github.event.pull_request.number }}
       cancel-in-progress: true
     steps:
+      - name: Mark the review pending on the head commit
+        id: context
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PROVIDER: ${{ inputs.provider }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        # The status is "<Provider> review", the reviewer's name capitalised, as devloop
+        # names it; it is set before anything else, so every failure below reports.
+        run: |
+          context="${PROVIDER^} review"
+          echo "context=${context}" >> "$GITHUB_OUTPUT"
+          gh api "repos/${GITHUB_REPOSITORY}/statuses/${HEAD_SHA}" \
+            -f state=pending -f "context=${context}" \
+            -f "description=Reviewing this commit" -f "target_url=${RUN_URL}"
+
       - name: Check out the base commit (the code and settings that run)
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
@@ -76,7 +92,9 @@ jobs:
 
       - uses: astral-sh/setup-uv@1db35dd8eee11c5894872e0b383ae6c406cf738d # v10.4.0
         with:
-          python-version: "3.12"
+          # Pinned: this job holds the key, so its tools change only through a pull request.
+          version: "0.13.7"
+          python-version: "3.12.14"
           enable-cache: false
 
       - name: Install devloop from the trusted side
@@ -84,25 +102,6 @@ jobs:
         env:
           DEVLOOP: ${{ inputs.devloop }}
         run: uv tool install "$DEVLOOP"
-
-      - name: Name the commit status
-        id: context
-        env:
-          PROVIDER: ${{ inputs.provider }}
-        run: |
-          context="$(devloop review --provider "$PROVIDER" --trusted "$GITHUB_WORKSPACE/trusted" --status-context)"
-          echo "context=${context}" >> "$GITHUB_OUTPUT"
-
-      - name: Mark the review pending on the head commit
-        env:
-          GH_TOKEN: ${{ github.token }}
-          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
-          CONTEXT: ${{ steps.context.outputs.context }}
-          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
-        run: >-
-          gh api "repos/${GITHUB_REPOSITORY}/statuses/${HEAD_SHA}"
-          -f state=pending -f "context=${CONTEXT}"
-          -f "description=Reviewing this commit" -f "target_url=${RUN_URL}"
 
       - name: Review
         id: review
@@ -117,7 +116,7 @@ jobs:
         run: devloop review --provider "$PROVIDER" --trusted "$GITHUB_WORKSPACE/trusted"
 
       - name: Report the review's outcome on the head commit
-        if: always() && steps.context.outputs.context != ''
+        if: always()
         env:
           GH_TOKEN: ${{ github.token }}
           HEAD_SHA: ${{ github.event.pull_request.head.sha }}

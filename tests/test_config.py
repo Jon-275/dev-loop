@@ -187,7 +187,7 @@ def test_review_defaults_review_code_and_block_on_p1_and_p2() -> None:
 @pytest.mark.parametrize(
     ("body", "message"),
     [
-        ('blocking_severities = ["P0"]', r"P0"),
+        ('blocking_severities = ["P9"]', r"P9"),
         ('feedback = "../x.json"', r"review\.feedback.*inside"),
         ("files = []", r"review\.files"),
         ('[review.reviewers.x]\nkind = "llama"', r"review\.reviewers\.x\.kind"),

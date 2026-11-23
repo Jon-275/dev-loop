@@ -121,15 +121,24 @@ def test_main_pushes_never_cancel_each_other() -> None:
 
 def test_the_review_runs_only_trusted_code_and_reads_the_pull_request_as_data() -> None:
     steps = _load("review.yml")["jobs"]["review"]["steps"]
-    trusted, pr = steps[0]["with"], steps[1]["with"]
-    assert (trusted["ref"], trusted["path"]) == ("${{ github.sha }}", "trusted")
-    assert (pr["ref"], pr["path"]) == ("${{ github.event.pull_request.head.sha }}", "pr")
+    checkouts = [s["with"] for s in steps if s.get("uses", "").startswith("actions/checkout@")]
+    assert [(c["ref"], c["path"]) for c in checkouts] == [
+        ("${{ github.sha }}", "trusted"),
+        ("${{ github.event.pull_request.head.sha }}", "pr"),
+    ]
     install = next(s for s in steps if s.get("name", "").startswith("Install devloop"))
     assert install["working-directory"] == "trusted"
-    assert steps[2]["with"]["enable-cache"] is False
+    uv = next(s for s in steps if s.get("uses", "").startswith("astral-sh/setup-uv@"))
+    assert uv["with"]["enable-cache"] is False and uv["with"]["version"] == "0.13.7"
     in_pr = [s["name"] for s in steps if s.get("working-directory") == "pr"]
     assert in_pr == ["Review"]
     assert '--trusted "$GITHUB_WORKSPACE/trusted"' in steps[-2]["run"]
+
+
+def test_the_status_is_pending_before_anything_that_can_fail() -> None:
+    first = _load("review.yml")["jobs"]["review"]["steps"][0]
+    assert first["id"] == "context" and "state=pending" in first["run"]
+    assert 'context="${PROVIDER^} review"' in first["run"]
 
 
 def test_only_the_review_step_holds_the_key() -> None:

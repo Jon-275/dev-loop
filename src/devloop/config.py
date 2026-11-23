@@ -17,14 +17,15 @@ from devloop.tools import TOOLS
 
 CONFIG_FILE = "devloop.toml"
 SEVERITIES = ("P1", "P2", "P3")
+#: Severities ``review.blocking_severities`` accepts: P0, from configs written for 0.2,
+#: is accepted and matches no finding.
+ACCEPTED_SEVERITIES = ("P0", *SEVERITIES)
 #: The kinds of model API a reviewer can use.
-REVIEWER_KINDS = ("gemini", "openai", "anthropic")
+REVIEWER_KINDS = ("gemini", "openai")
 #: Reviewers devloop knows by name, with their kind; any other name must set ``kind``.
 BUILT_IN_REVIEWERS = {
     "gemini": "gemini",
     "reflection": "openai",
-    "openai": "openai",
-    "anthropic": "anthropic",
 }
 #: The file types a reviewer reads by default: code, and the configuration that ships it.
 REVIEWED_FILES = (
@@ -427,8 +428,10 @@ def _severities(table: Mapping[str, Any], default: tuple[str, ...]) -> tuple[str
     """Validate ``review.blocking_severities`` against P1 to P3."""
     values = _strs(table, "review.blocking_severities", "blocking_severities", default)
     for value in values:
-        if value not in SEVERITIES:
-            raise ConfigError(f"review.blocking_severities: {value!r} is not one of {SEVERITIES}")
+        if value not in ACCEPTED_SEVERITIES:
+            raise ConfigError(
+                f"review.blocking_severities: {value!r} is not one of {ACCEPTED_SEVERITIES}"
+            )
     return values
 
 

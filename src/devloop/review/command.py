@@ -27,17 +27,6 @@ from devloop.review.threads import load_feedback
 SHARED_KEY = "DEVLOOP_API_KEY"
 
 
-def status_context(name: str, trusted: Path) -> int:
-    """Print reviewer ``name``'s commit status context; return 2 when it cannot be read."""
-    try:
-        config = load_config(trusted / "devloop.toml")
-        print(provider_for(resolve(name, config.review.reviewers), "").status_context)
-    except (ConfigError, ReviewError) as error:
-        print(f"devloop review: {error}", file=sys.stderr)
-        return 2
-    return 0
-
-
 def policy(config: Config) -> Policy:
     """Return the run policy a project's ``devloop.toml`` sets."""
     review = config.review
@@ -156,10 +145,5 @@ def main(argv: Sequence[str]) -> int:
     )
     parser.add_argument("--local", action="store_true", help="review this branch and print")
     parser.add_argument("--base", default="origin/main", help="local mode's base (origin/main)")
-    parser.add_argument(
-        "--status-context", action="store_true", help="print the reviewer's status name and exit"
-    )
     args = parser.parse_args(list(argv))
-    if args.status_context:
-        return status_context(args.provider, Path(args.trusted))
     return review(args.provider, Path(args.trusted), local=args.local, base=args.base)
