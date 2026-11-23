@@ -1,21 +1,10 @@
 """``devloop metrics``: measure the review loop over the pull requests merged in a window.
 
-Run weekly (``metrics.yml``) and by hand; the report goes to the job summary. Ported
-from gtm_toolkit's ``scripts/loop_metrics.py``.
-
-For each merged pull request: changed lines, hours from open to merge, commits, review
-app reviews, finding threads by reviewer and severity, and how many carry a label.
-Findings and labels are read with the feedback loop's own rules
-(:mod:`devloop.review.feedback`), so the figures match what it learns from. Model tokens
-come from the hidden ``model-usage`` marker on the reviewers' summaries; a summary without
-one is counted as unmeasured, never as zero, and so is a commit whose latest review status
-failed or never finished with no summary from the run that set it (matched by run id).
-
-Per reviewer: threads, accepted, rejected, unlabelled, precision (accepted of labelled)
-and unique accepted findings (no other reviewer's thread on the same file within
-:data:`NEAR_LINES` lines). Nothing is dropped silently: pull requests whose reviews,
-threads or comments did not fit one page are named, tokens left out are counted per
-reviewer, and what is not measured (CI minutes, escaped defects) is listed as such.
+Ported from gtm_toolkit's ``scripts/loop_metrics.py``. Per pull request: size, hours to
+merge, commits, review app reviews, finding threads and their labels (read with the
+feedback loop's own rules), and model tokens from the ``model-usage`` markers. Nothing is
+dropped silently: truncated pull requests, a summary without a marker and a failed run
+with no summary of its own are named, never counted as zero.
 """
 
 from __future__ import annotations
