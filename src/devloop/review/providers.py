@@ -133,6 +133,8 @@ def resolve(name: str, overrides: Mapping[str, cfg.Reviewer]) -> Reviewer:
             key=own.key or base.key,
             dimensions=own.dimensions or base.dimensions,
         )
+    if base.kind == "anthropic" and name not in BUILT_IN:
+        base = replace(base, max_output_tokens=BUILT_IN["anthropic"].max_output_tokens)
     if base.kind not in ("gemini", "openai", "anthropic"):
         raise ReviewError(f"reviewer {name!r} has kind {base.kind!r}")
     needed = [("model", base.model)]

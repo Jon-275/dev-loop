@@ -9,7 +9,9 @@ is off (``max_retries=0``), so devloop's backoff is the only retry and the job b
 
 from __future__ import annotations
 
+import json
 import re
+import time
 from collections.abc import Callable
 from typing import Any
 
@@ -29,6 +31,10 @@ FALLBACK_BETA = "server-side-fallback-2026-07-01"
 #: Anthropic's "overloaded" status, retried like a 503.
 OVERLOADED = 529
 _SAFE_CODE = re.compile(r"[a-z][a-z0-9_]{0,63}")
+#: Error types worth retrying when the API reports them inside a stream (status 200).
+STREAM_RETRY_TYPES = frozenset({"overloaded_error", "api_error", "rate_limit_error"})
+#: The clock a request's deadline is measured on.
+_now = time.monotonic
 
 #: Send one request's keyword arguments and return the final message.
 Stream = Callable[[dict[str, Any]], object]
@@ -44,11 +50,25 @@ def is_transient(error: BaseException) -> bool:
 
     if isinstance(error, anthropic.APIConnectionError):  # APITimeoutError included
         return True
+    import httpx2
+
     if isinstance(error, anthropic.APIStatusError):
         if error.response.headers.get("x-should-retry", "").strip().lower() == "false":
             return False
+        if error.status_code < 400:  # an error event inside a stream: judge it by its type
+            return _error_type(error) in STREAM_RETRY_TYPES
         return error.status_code in TRANSIENT_STATUS | {OVERLOADED}
+    if isinstance(error, httpx2.TransportError):  # the connection failed while reading
+        return True
     return is_network_error(error)
+
+
+def _error_type(error: object) -> str | None:
+    """Return the API error's ``error.type`` from its body, if it has one."""
+    body = getattr(error, "body", None)
+    found = body.get("error") if isinstance(body, dict) else None
+    kind = found.get("type") if isinstance(found, dict) else None
+    return kind if isinstance(kind, str) else None
 
 
 def describe(error: BaseException) -> str:
@@ -56,18 +76,26 @@ def describe(error: BaseException) -> str:
     import anthropic
 
     if isinstance(error, anthropic.APIStatusError):
-        body = error.body.get("error") if isinstance(error.body, dict) else None
-        kind = body.get("type") if isinstance(body, dict) else None
-        safe = isinstance(kind, str) and _SAFE_CODE.fullmatch(kind)
-        return f"HTTP {error.status_code}" + (f" {kind}" if safe else "")
+        kind = _error_type(error)
+        named = f" {kind}" if kind is not None and _SAFE_CODE.fullmatch(kind) else ""
+        if error.status_code < 400:
+            return f"stream error{named}"
+        return f"HTTP {error.status_code}{named}"
     return type(error).__name__
 
 
 def api_errors() -> tuple[type[BaseException], ...]:
     """Return the errors a request can end in: the SDK's API errors and network errors."""
     import anthropic
+    import httpx2
 
-    return (anthropic.APIError, OSError)
+    return (
+        anthropic.APIError,
+        httpx2.TransportError,
+        httpx2.DecodingError,
+        json.JSONDecodeError,
+        OSError,
+    )
 
 
 #: The endpoint the SDK uses unless the reviewer's config names another.
@@ -87,8 +115,20 @@ def sdk_stream(api_key: str, timeout: float, base_url: str = "") -> Stream:
     )
 
     def send(request: dict[str, Any]) -> object:
-        """Stream the request and return the final message."""
+        """Stream the request and return the final message, within ``timeout`` in all.
+
+        The SDK's timeout bounds each read, and a busy stream keeps resetting it, so the
+        whole request gets its own deadline: past it the stream is closed.
+
+        Raises:
+            TimeoutError: the request ran past its deadline (retried like a timeout).
+
+        """
+        deadline = _now() + timeout
         with client.beta.messages.stream(**request) as stream:
+            for _ in stream:
+                if _now() > deadline:
+                    raise TimeoutError(f"no final message within {timeout:.0f} s")
             return stream.get_final_message()
 
     return send
@@ -131,13 +171,14 @@ def reply_text(provider: Provider, message: object, usage: Usage) -> str:
     else:
         usage.add(given + sum(c for c in cached if c is not None), made)
     stop = getattr(message, "stop_reason", None)
-    if stop == "max_tokens":
-        raise ReplyCutOff(
-            f"{provider.name}'s reply was cut off at max_tokens (stop_reason: max_tokens)"
-        )
+    if stop in ("max_tokens", "model_context_window_exceeded"):
+        raise ReplyCutOff(f"{provider.name}'s reply was cut off at its limit (stop_reason: {stop})")
     if stop == "refusal":
         raise ReviewError(f"{provider.name} declined the review (stop_reason: refusal)")
-    blocks = getattr(message, "content", None) or []
+    blocks = list(getattr(message, "content", None) or [])
+    switches = [i for i, b in enumerate(blocks) if getattr(b, "type", "") == "fallback"]
+    if switches:  # the declined model's partial text comes before the last switch
+        blocks = blocks[switches[-1] + 1 :]
     text = "".join(str(getattr(b, "text", "")) for b in blocks if getattr(b, "type", "") == "text")
     if not text:
         raise ReviewError(f"{provider.name} returned no review text")
