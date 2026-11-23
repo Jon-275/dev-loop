@@ -41,6 +41,7 @@ def _parser() -> argparse.ArgumentParser:
         ("feedback", "collect accepted and rejected review findings into review.feedback"),
         ("labels", "in CI, check every review finding on a pull request has a labelled reply"),
         ("lessons", "rank the bug classes review found and write the lessons and rules"),
+        ("metrics", "measure the review loop over the pull requests merged in a window"),
     ):
         sub = commands.add_parser(name, help=text)
         sub.add_argument("--root", type=Path, default=Path.cwd(), help="project root")
@@ -52,6 +53,9 @@ def _parser() -> argparse.ArgumentParser:
         if name == "lessons":
             notes = os.environ.get("REVIEW_NOTES_DIR") or None
             sub.add_argument("--notes", type=Path, default=notes, help="council notes folder")
+        if name == "metrics":
+            sub.add_argument("--days", type=int, default=7, help="the window, in days")
+            sub.add_argument("--json", type=Path, default=None, help="also write the figures")
         if name == "main-health":
             sub.add_argument("--workflow", required=True, help="the workflow's name")
             sub.add_argument("--sha", required=True, help="the commit the run tested")
@@ -198,6 +202,10 @@ def main(argv: Sequence[str] | None = None) -> int:
         from devloop.lessons import main as lessons_main
 
         return lessons_main(root, args.notes)
+    if args.command == "metrics":
+        from devloop.metrics import main as metrics_main
+
+        return metrics_main(root, args.days, args.json, os.environ)
     try:
         if args.command == "init":
             _report(init(root))
