@@ -16,7 +16,7 @@ It works with Claude Code, Codex, Gemini CLI, Antigravity CLI, Cursor and Copilo
 ## Get started
 
 ```bash
-uv tool install git+https://github.com/Jon-275/dev-loop@v0.3.0
+uv tool install git+https://github.com/Jon-275/dev-loop@v0.3.1
 cd your-project
 devloop init              # set up the project
 devloop doctor --check    # check nothing has drifted; run this in CI
