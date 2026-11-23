@@ -307,3 +307,29 @@ class ThreadMark:
     #: and its first comment's id, for the open-thread check.
     title: str = ""
     comment_id: int | None = None
+
+
+@dataclass(frozen=True)
+class Baseline:
+    """The last head this reviewer completed on the pull request, and its base then."""
+
+    head: str
+    base: str
+
+
+@dataclass(frozen=True)
+class Increment:
+    """What an incremental review leaves out because it was reviewed at ``since``."""
+
+    since: str
+    #: Changed files whose diff is unchanged since ``since``, with their hunk counts.
+    carried: tuple[tuple[str, int], ...]
+    #: Files changed since ``since`` that are back to the base version: nothing to review.
+    restored: tuple[str, ...]
+    #: Hunks and files in this round's diff (from ``since``), and in the pull
+    #: request's whole diff (from the base). They count different diffs, so a
+    #: file edited in several places since ``since`` can make ``hunks`` the larger.
+    hunks: int
+    total_hunks: int
+    files: int
+    total_files: int
