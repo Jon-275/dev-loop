@@ -47,7 +47,13 @@ def test_a_public_report_holds_no_prompt_path_or_title() -> None:
 
 
 def test_a_comment_without_a_heading_or_line_is_not_a_finding() -> None:
-    side = replay.Side(comments=[{"path": "a.py", "line": None, "body": "x"}, {"path": "a.py"}])
+    side = replay.Side(
+        comments=[
+            {"path": "a.py", "line": None, "body": "x"},
+            {"path": "a.py"},
+            {"line": 3, "body": "x"},
+        ]
+    )
     assert replay.findings(side) == []
 
 

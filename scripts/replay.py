@@ -191,12 +191,12 @@ def findings(side: Side) -> list[tuple[str, str, int, str]]:
     """Return the findings a side posted as threads: severity, path, line and title."""
     found = []
     for comment in side.comments:
-        body, line = str(comment.get("body") or ""), comment.get("line")
-        if not body or not isinstance(line, int):
+        body, line, path = str(comment.get("body") or ""), comment.get("line"), comment.get("path")
+        if not body or not isinstance(line, int) or not isinstance(path, str) or not path:
             continue
         heading = body.splitlines()[0]
         severity, _, title = heading.strip("*").partition(" — ")
-        found.append((severity, comment["path"], int(comment["line"]), title))
+        found.append((severity, path, line, title))
     return sorted(found)
 
 
