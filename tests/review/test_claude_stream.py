@@ -215,4 +215,9 @@ def test_a_custom_anthropic_reviewer_gets_the_anthropic_output_limit() -> None:
     own = {"sonnet": cfg.Reviewer(kind="anthropic", model="claude-sonnet-5-5")}
     assert providers.resolve("sonnet", own).max_output_tokens == 64_000
     moved = {"reflection": cfg.Reviewer(kind="anthropic", model="claude-sonnet-5-5")}
-    assert providers.resolve("reflection", moved).max_output_tokens == 64_000
+    switched = providers.resolve("reflection", moved)
+    assert switched.max_output_tokens == 64_000
+    assert switched.base_url == ""  # never the old API's host (Gemini on #28)
+    assert switched.key == "REFLECTION_API_KEY"
+    with pytest.raises(ReviewError, match="needs base_url"):
+        providers.resolve("gemini", {"gemini": cfg.Reviewer(kind="openai", model="m")})

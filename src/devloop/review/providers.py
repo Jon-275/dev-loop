@@ -120,9 +120,15 @@ def resolve(name: str, overrides: Mapping[str, cfg.Reviewer]) -> Reviewer:
         raise ReviewError(
             f"unknown reviewer {name!r}: add [review.reviewers.{name}] to devloop.toml"
         )
-    if base is None:
+    key = f"{name.upper().replace('-', '_')}_API_KEY"
+    if base is None or (own is not None and own.kind and own.kind != base.kind):
+        # A new reviewer, or a built-in switched to another API: nothing of the old API's
+        # model, endpoint or limit carries over, so a key never goes to the old host.
+        limit = (
+            BUILT_IN["anthropic"].max_output_tokens if own and own.kind == "anthropic" else 65_536
+        )
         base = Reviewer(
-            name, name.capitalize(), "", "", "", f"{name.upper().replace('-', '_')}_API_KEY"
+            name, name.capitalize(), "", "", "", base.key if base else key, max_output_tokens=limit
         )
     if own is not None:
         base = replace(
@@ -133,8 +139,6 @@ def resolve(name: str, overrides: Mapping[str, cfg.Reviewer]) -> Reviewer:
             key=own.key or base.key,
             dimensions=own.dimensions or base.dimensions,
         )
-    if base.kind == "anthropic" and getattr(BUILT_IN.get(name), "kind", "") != "anthropic":
-        base = replace(base, max_output_tokens=BUILT_IN["anthropic"].max_output_tokens)
     if base.kind not in ("gemini", "openai", "anthropic"):
         raise ReviewError(f"reviewer {name!r} has kind {base.kind!r}")
     needed = [("model", base.model)]
