@@ -197,6 +197,9 @@ def test_a_store_that_cannot_be_read_is_never_overwritten(tmp_path: Path) -> Non
     (tmp_path / "bad.json").write_text("{not json")
     with pytest.raises(fb.FeedbackError, match="cannot be read"):
         fb.load_store(tmp_path / "bad.json")
+    (tmp_path / "latin.json").write_bytes(b'{"records": ["caf\xe9"]}')
+    with pytest.raises(fb.FeedbackError, match="cannot be read"):
+        fb.load_store(tmp_path / "latin.json")
 
 
 def test_the_command_needs_its_settings(
