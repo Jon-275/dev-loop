@@ -16,7 +16,32 @@ from typing import Any
 from devloop.tools import TOOLS
 
 CONFIG_FILE = "devloop.toml"
-SEVERITIES = ("P0", "P1", "P2", "P3")
+SEVERITIES = ("P1", "P2", "P3")
+#: The kinds of model API a reviewer can use.
+REVIEWER_KINDS = ("gemini", "openai", "anthropic")
+#: Reviewers devloop knows by name, with their kind; any other name must set ``kind``.
+BUILT_IN_REVIEWERS = {
+    "gemini": "gemini",
+    "reflection": "openai",
+    "openai": "openai",
+    "anthropic": "anthropic",
+}
+#: The file types a reviewer reads by default: code, and the configuration that ships it.
+REVIEWED_FILES = (
+    "*.py",
+    "*.pyi",
+    "*.toml",
+    "*.yml",
+    "*.yaml",
+    "*.sh",
+    "*.sql",
+    "**/Dockerfile",
+    "Dockerfile",
+    "**/Dockerfile.*",
+    "Dockerfile.*",
+)
+_NAME = re.compile(r"^[a-z][a-z0-9-]*$")
+_ENV_NAME = re.compile(r"^[A-Z][A-Z0-9_]*$")
 TIERS = (1, 2, 3)
 _LABEL = re.compile(r"^[a-z][a-z0-9-]*$")
 
@@ -52,12 +77,36 @@ class PR:
 
 
 @dataclass(frozen=True)
+class Reviewer:
+    """``[review.reviewers.NAME]``: one model reviewer's API, model, key and dimensions.
+
+    Every field may be left empty: a built-in reviewer fills it in. ``base_url`` comes from
+    the trusted checkout's config, never the pull request's, so a key goes only there.
+    """
+
+    kind: str = ""
+    model: str = ""
+    base_url: str = ""
+    key: str = ""
+    dimensions: dict[str, str] = field(default_factory=dict)
+
+
+@dataclass(frozen=True)
 class Review:
-    """``[review]``: reviewer providers per tier and which severities block a merge."""
+    """``[review]``: who reviews each tier, what blocks a merge, and what is reviewed.
+
+    ``high_effort`` globs pick the pull requests a model reviews at high effort; ``feedback``
+    and ``lessons`` are files the review prompt learns from (empty: none).
+    """
 
     providers: dict[int, tuple[str, ...]] = field(default_factory=dict)
-    blocking_severities: tuple[str, ...] = ("P0", "P1", "P2")
+    blocking_severities: tuple[str, ...] = ("P1", "P2")
     lenses_dir: str = "devloop/lenses"
+    files: tuple[str, ...] = REVIEWED_FILES
+    high_effort: tuple[str, ...] = ("*",)
+    feedback: str = ""
+    lessons: str = ""
+    reviewers: dict[str, Reviewer] = field(default_factory=dict)
 
 
 @dataclass(frozen=True)
@@ -186,7 +235,20 @@ def parse_config(text: str) -> Config:
     if "version" not in fw:
         raise ConfigError("framework.version is required")
     pr = _table(data, "pr", {"max_lines", "exclude", "exclude_blocks", "large_label"})
-    review = _table(data, "review", {"providers", "blocking_severities", "lenses_dir"})
+    review = _table(
+        data,
+        "review",
+        {
+            "providers",
+            "blocking_severities",
+            "lenses_dir",
+            "files",
+            "high_effort",
+            "feedback",
+            "lessons",
+            "reviewers",
+        },
+    )
     labels = _table(data, "labels", {"prefixes"})
     agents = _table(data, "agents", {"tools", "skills_targets"})
     skills = _table(data, "skills", {"include", "project"})
@@ -210,6 +272,11 @@ def parse_config(text: str) -> Config:
                 _str(review, "review.lenses_dir", "lenses_dir", d_rev.lenses_dir),
                 "review.lenses_dir",
             ),
+            files=_non_empty(review, "review.files", "files", d_rev.files),
+            high_effort=_strs(review, "review.high_effort", "high_effort", d_rev.high_effort),
+            feedback=_optional_path(review, "review.feedback", "feedback"),
+            lessons=_optional_path(review, "review.lessons", "lessons"),
+            reviewers=_reviewers(_table(review, "reviewers", None)),
         ),
         labels=Labels(prefixes=_prefixes(labels, d_lab.prefixes)),
         agents=Agents(tools=_tools(agents, d_ag.tools), skills_targets=_targets(agents, d_ag)),
@@ -310,8 +377,54 @@ def _tiers(table: dict[str, Any]) -> dict[int, tuple[str, ...]]:
     return tiers
 
 
+def _non_empty(
+    table: Mapping[str, Any], where: str, key: str, default: tuple[str, ...]
+) -> tuple[str, ...]:
+    """Return the list of strings at ``key`` (``default`` when absent); it may not be empty."""
+    values = _strs(table, where, key, default)
+    if not values:
+        raise ConfigError(f"{where} must name at least one pattern")
+    return values
+
+
+def _optional_path(table: Mapping[str, Any], where: str, key: str) -> str:
+    """Return the relative path at ``key``, or ``""`` when absent."""
+    return _rel_path(_str(table, where, key, "-"), where) if key in table else ""
+
+
+def _reviewers(table: Mapping[str, Any]) -> dict[str, Reviewer]:
+    """Validate ``[review.reviewers.NAME]`` tables; an unknown name must set ``kind``."""
+    reviewers: dict[str, Reviewer] = {}
+    for name, entry in table.items():
+        where = f"review.reviewers.{name}"
+        if not _NAME.match(name):
+            raise ConfigError(f"{where}: a reviewer name is a lower-case word")
+        if not isinstance(entry, dict):
+            raise ConfigError(f"[{where}] must be a table")
+        for key in entry:
+            if key not in {"kind", "model", "base_url", "key", "dimensions"}:
+                raise ConfigError(f"unknown key {where}.{key} in {CONFIG_FILE}")
+        kind = _str(entry, f"{where}.kind", "kind", BUILT_IN_REVIEWERS.get(name, "-"))
+        if kind not in REVIEWER_KINDS:
+            raise ConfigError(f"{where}.kind must be one of {REVIEWER_KINDS}")
+        model = _str(entry, f"{where}.model", "model", "-") if "model" in entry else ""
+        url = _str(entry, f"{where}.base_url", "base_url", "-") if "base_url" in entry else ""
+        if url and not url.startswith("https://"):
+            raise ConfigError(f"{where}.base_url must be an https:// URL")
+        key = _str(entry, f"{where}.key", "key", "-") if "key" in entry else ""
+        if key and not _ENV_NAME.match(key):
+            raise ConfigError(f"{where}.key must name an environment variable (A_KEY)")
+        dims = entry.get("dimensions", {})
+        if not isinstance(dims, dict) or not all(
+            isinstance(v, str) and v and re.fullmatch(r"[A-Za-z0-9]+", k) for k, v in dims.items()
+        ):
+            raise ConfigError(f"{where}.dimensions must be a table of TAG = name")
+        reviewers[name] = Reviewer(kind, model, url, key, dict(dims))
+    return reviewers
+
+
 def _severities(table: Mapping[str, Any], default: tuple[str, ...]) -> tuple[str, ...]:
-    """Validate ``review.blocking_severities`` against P0 to P3."""
+    """Validate ``review.blocking_severities`` against P1 to P3."""
     values = _strs(table, "review.blocking_severities", "blocking_severities", default)
     for value in values:
         if value not in SEVERITIES:
