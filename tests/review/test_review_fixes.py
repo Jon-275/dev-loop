@@ -94,9 +94,13 @@ def test_a_config_written_for_0_2_still_loads() -> None:
     assert parse_config(old).review.blocking_severities == ("P0", "P1", "P2")
 
 
-def test_anthropic_is_not_offered_until_it_can_run() -> None:
-    with pytest.raises(Exception, match="kind"):
-        parse_config('[framework]\nversion = "0.3"\n[review.reviewers.x]\nkind = "anthropic"\n')
+def test_an_anthropic_reviewer_resolves_without_an_endpoint() -> None:
+    from devloop.review.providers import resolve
+
+    config = parse_config(
+        '[framework]\nversion = "0.3"\n[review.reviewers.x]\nkind = "anthropic"\nmodel = "m"\n'
+    )
+    assert resolve("x", config.review.reviewers).kind == "anthropic"
 
 
 def test_every_status_name_is_the_reviewer_name_capitalised_so_the_workflow_can_name_it() -> None:

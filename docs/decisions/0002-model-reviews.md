@@ -26,5 +26,5 @@ gtm_toolkit's, so its open threads keep counting when it switches to devloop.
 
 - An SDK's own retry and error types are gone. Retries are devloop's alone, and errors
   are classified by HTTP status and error code.
-- An Anthropic reviewer, which should use the official SDK, comes as an optional extra
-  in a later change.
+- The Anthropic reviewer uses the official SDK, as the optional extra
+  `dev-loop[anthropic]`, with the SDK's own retry off.

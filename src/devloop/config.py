@@ -21,11 +21,12 @@ SEVERITIES = ("P1", "P2", "P3")
 #: is accepted and matches no finding.
 ACCEPTED_SEVERITIES = ("P0", *SEVERITIES)
 #: The kinds of model API a reviewer can use.
-REVIEWER_KINDS = ("gemini", "openai")
+REVIEWER_KINDS = ("gemini", "openai", "anthropic")
 #: Reviewers devloop knows by name, with their kind; any other name must set ``kind``.
 BUILT_IN_REVIEWERS = {
     "gemini": "gemini",
     "reflection": "openai",
+    "anthropic": "anthropic",
 }
 #: The file types a reviewer reads by default: code, and the configuration that ships it.
 REVIEWED_FILES = (
