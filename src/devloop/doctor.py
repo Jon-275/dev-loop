@@ -7,6 +7,7 @@ from pathlib import Path
 from devloop import __version__
 from devloop.agents_md import AGENTS_FILE, BlockError, missing_sections, parse_blocks
 from devloop.config import CONFIG_FILE, Config, ConfigError, load_config
+from devloop.council import problems as council_problems
 from devloop.sync import CLAUDE_FILE, CLAUDE_IMPORT, GEMINI_SETTINGS, SyncError, plan
 from devloop.tools import TOOLS
 
@@ -78,4 +79,5 @@ def diagnose(root: Path) -> list[str]:
     problems += _agents_md_problems(root)
     problems += _tool_problems(config)
     problems += _sync_problems(root, config)
+    problems += council_problems(root, config)
     return problems
