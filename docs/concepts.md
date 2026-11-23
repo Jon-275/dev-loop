@@ -58,4 +58,4 @@ adapter, not in a gate.
 
 For tier-1 and tier-2 changes, a council of roles reviews with proof: every P0 and P1
 finding comes with a command that was run. Each project designs its own council from
-devloop's role library ([skills](skills.md): `council-design`, `council-review`).
+devloop's role library ([the council](council.md)).

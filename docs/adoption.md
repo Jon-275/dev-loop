@@ -65,4 +65,5 @@ commit says which tool wrote it.
 ## 6. The council
 
 Run the `council-design` skill to draft the project's council from devloop's role library,
-and record it as a decision. `devloop doctor` then checks the cards stay current.
+and record it as a decision ([the council](council.md)). `devloop doctor` then checks the
+cards stay current. Read the [security model](security.md) before adding secrets.
