@@ -278,15 +278,25 @@ _CONNECTIVES = frozenset(
     "and or but then because when while if unless so as to though although yet except "
     "however whereas albeit nor otherwise also again still only until which with without "
     "instead forever never not no none nothing cannot can't don't doesn't isn't aren't "
-    "won't wasn't weren't by at for via using through of one".split()
+    "won't wasn't weren't by at for via using through of one alone today currently".split()
 )
-#: Words that turn a ", with ... tests updated" tail into a missing or disabled check. The
-#: tail is never masked, so a concern word in it still counts.
-_TAIL_DENIALS = frozenset(
-    "no not without none never removed disabled skipped xfail fewer flaky".split()
+#: The only words a ", with ... tests updated" tail may use: any other ("weakened",
+#: "deleted", "no") may say a check was lost. The tail is never masked.
+_TAIL_WORDS = frozenset(
+    "the corresponding regression failing existing new unit integration related and "
+    "workflow increment review".split()
 )
-#: A hypothetical in a relative clause states the hole being closed ("could hide").
-_HYPOTHETICAL = frozenset({"could", "might", "would"})
+#: A closing clause states the hole only as damage that could have happened: up to six
+#: words, then could/might/would (be), then a damage verb ("a pull request's
+#: `.gitattributes` could hide changed content"). "where an operator could recover lost
+#: rows" names a safeguard, so it stays listed.
+_HARM_CLAUSE = re.compile(
+    r"(?:" + r"(?:`[^`\s]+`|[A-Za-z0-9_'-])+" + r"[ \t]+){1,6}(?:could|might|would)"
+    r"(?:[ \t]+be)?[ \t]+(?:hide|hidden|mask|masked|skip|skipped|overwrite|overwritten|"
+    r"duplicate|duplicated|double-bill|double-billed|leak|leaked|lose|lost|drop|dropped|"
+    r"corrupt|corrupted|bypass|bypassed|escape|escaped)\b",
+    re.IGNORECASE,
+)
 _FREE = r"(?:" + _SPACE + _WORD + r")"
 #: Whole-sentence templates for a sentence that only describes what the change does or
 #: fixes: the three shapes of the live false concerns (gtm_toolkit #264-#271), and no
@@ -373,15 +383,15 @@ _DESCRIPTION_MAX_CHARS = 400
 def _free_text_ok(found: re.Match[str]) -> bool:
     """Return whether a template's free text and clause hold no connective.
 
-    The fixed-shape ", with ... tests updated" tail may join words with "and", but may not
-    deny a test (:data:`_TAIL_DENIALS`).
+    The fixed-shape ", with ... tests updated" tail may use only :data:`_TAIL_WORDS`.
 
-    A ``clause`` must also be hypothetical (:data:`_HYPOTHETICAL`): "where X could hide
-    Y" states the hole the change closes; "that holds failed writes" may be a safeguard.
+    A ``clause`` must state damage that could have happened (:data:`_HARM_CLAUSE`):
+    "where X could hide Y" is the hole the change closes; "where an operator could
+    recover lost rows" is a safeguard, and closing it is the concern.
     """
     groups = found.groupdict()
     tail = {w.lower() for w in re.split(r"[\s-]+", groups.get("tail") or "") if w}
-    if tail & _TAIL_DENIALS:  # "with no tests added": it says what is missing
+    if not tail <= _TAIL_WORDS:  # "with weakened tests updated" may say a check was lost
         return False
     free = " ".join(v for k, v in groups.items() if k.startswith("free") and v)
     clause = groups.get("clause") or ""
@@ -392,9 +402,9 @@ def _free_text_ok(found: re.Match[str]) -> bool:
         if groups.get(name) is not None:
             if not set(re.split(r"[\s-]+", groups[name].strip().lower())) <= allowed:
                 return False
-    if clause and _COMES_BACK.search(clause):
+    if clause and (_COMES_BACK.search(clause) or not _HARM_CLAUSE.match(clause.strip())):
         return False
-    return not clause or bool(_HYPOTHETICAL & {w.lower() for w in clause.split()})
+    return True
 
 
 def _described(sentence: str) -> str:

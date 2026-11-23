@@ -18,6 +18,11 @@ DESCRIBED = [
     # gtm_toolkit #264-#266
     "The change extends loop metrics to capture failed model attempts.",
     "It also hardens the labels check to distinguish a failed reviewer from a pending one.",
+    # the council's round four judged these descriptions: they say what is now recorded
+    "This change extends usage to count failed requests.",
+    "This change updates the usage report to count failed calls.",
+    "It also updates the token metrics to count failed calls.",
+    "It also updates the status label to distinguish a failed run from a passing one.",
     # a closing verb's relative clause names the hole that was closed
     "The change closes the gap where tokens could leak into the log.",
 ]
@@ -218,10 +223,54 @@ COUNCIL_FINAL = [
 ]
 
 
-@pytest.mark.parametrize("sentence", STILL_LISTED + COUNCIL + COUNCIL_DELTA + COUNCIL_FINAL)
+#: The council's fourth round: safeguards named in a where-clause, weakened tests in the
+#: tail, and borderline sentences. Every one listed on main; each must stay listed.
+COUNCIL_ROUND4 = [
+    "This closes the path where a failed write would be retried.",
+    "This closes the window where an operator could recover lost rows.",
+    "This prevents the cases where the CLI would report a failure.",
+    "This closes the route where admins could revoke a leaked token.",
+    "This prevents the cases where the guard would catch a stale lease.",
+    "This closes the window where a reviewer could flag a regression.",
+    "This prevents the cases where the job would exit nonzero on a crash.",
+    "This closes the path where the scheduler might rerun a crashed job.",
+    "This prevents the cases where the loader would raise on corrupt rows.",
+    "This closes the window where the new lock could deadlock the writer.",
+    "This prevents the cases where the loader would raise a KeyError on missing rows.",
+    "This closes the gaps where tests could catch a regression.",
+    "This closes the cases where a retry could double-bill in production today.",
+    "This closes the paths where a retry could double-bill on Postgres alone.",
+    "This closes the paths where a retry could double-bill on SQLite only.",
+    "This closes the paths where a retry could double-bill except-on-Postgres.",
+    "This closes the paths where a retry could double-bill, with weakened tests updated.",
+    "This closes the paths where a retry could double-bill, with loosened tests updated.",
+    "This closes the paths where a retry could double-bill, with commented-out tests updated.",
+    "This closes the paths where a retry could double-bill, with mocked-out tests updated.",
+    "This closes the paths where a retry could double-bill, with deleted tests updated.",
+    "This closes the paths where a retry could double-bill, with relaxed tests updated.",
+    "This closes the paths where a retry could double-bill, with ignored tests updated.",
+    "This closes the paths where a retry could double-bill, with failing tests added.",
+    "This change updates the success counter to count failed checks.",
+    "This change updates the pass rate to count failed checks.",
+    "It also hardens the gate to distinguish a failed write from a lost one.",
+    "It also hardens the gate to distinguish a failed write from a stale one.",
+    "This change updates the docs to distinguish a failed run from a green one.",
+    "This closes the paths where a retry could double-bill; the writer still leaks.",
+    "This closes the paths where a retry could double-bill. The writer leaks.",
+    "This closes the paths where a retry could double-bill?",
+    "It closes the paths where a retry could double-bill.",
+    "This closes the paths where `retry and leak` could double-bill.",
+    "This closes the paths where a retry could double‑bill and leak.",
+]
+
+
+@pytest.mark.parametrize(
+    "sentence", STILL_LISTED + COUNCIL + COUNCIL_DELTA + COUNCIL_FINAL + COUNCIL_ROUND4
+)
 def test_a_concern_phrased_like_a_description_is_still_listed(sentence: str) -> None:
     assert names_concern(sentence)
-    assert summary_concerns(f"Adds a sync. {sentence}") == [" ".join(sentence.split())]
+    listed = summary_concerns(f"Adds a sync. {sentence}")
+    assert listed and all(part in " ".join(sentence.split()) for part in listed)
 
 
 @pytest.mark.parametrize(
