@@ -401,7 +401,7 @@ def load_store(path: Path) -> dict[str, Any]:
         data = json.loads(path.read_text(encoding="utf-8"))
     except FileNotFoundError:
         return dict(EMPTY_STORE)
-    except (OSError, json.JSONDecodeError) as error:
+    except (OSError, UnicodeDecodeError, json.JSONDecodeError) as error:
         raise FeedbackError(f"{path} cannot be read: {error}") from None
     if not isinstance(data, dict):
         raise FeedbackError(f"{path} is not a JSON object")
