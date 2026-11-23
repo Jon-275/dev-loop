@@ -309,12 +309,12 @@ def main(argv: Sequence[str]) -> int:
         if action == "add":
             sub.add_argument("roles", nargs="+", help="library role names")
     args = parser.parse_args(list(argv))
-    root: Path = args.root.resolve()
     if args.action == "library":
         for name, card in library().items():
             print(f"{'always' if name in ALWAYS else 'pack  '}  {name}  {card.title}")
         return 0
     try:
+        root: Path = args.root.resolve()
         if args.action == "add":
             for path in add(root, args.roles):
                 print(f"created {path}")
@@ -329,7 +329,13 @@ def main(argv: Sequence[str]) -> int:
         label = config.council.roles_dir
         cards = load_cards(root / label, label)
         paths = args.paths if args.paths is not None else _changed(root, args.base)
-    except (ConfigError, CouncilError, OSError, subprocess.CalledProcessError) as error:
+    except (
+        ConfigError,
+        CouncilError,
+        OSError,
+        UnicodeDecodeError,
+        subprocess.CalledProcessError,
+    ) as error:
         print(f"devloop council: {error}", file=sys.stderr)
         return 2
     chosen = plan(cards, paths, pr_tier(paths, config.tiers))
