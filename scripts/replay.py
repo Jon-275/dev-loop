@@ -106,8 +106,8 @@ def gtm_side(name: str, gtm: Path, base: str, head: str, key: str, fake: bool) -
             previous=None,
             usage=usage,
         )
-    except core.ReviewError as error:
-        side.error = str(error)
+    except Exception as error:  # a replay reports every failure, by its type in public
+        side.error = f"{type(error).__name__}: {error}"
     return side
 
 
@@ -182,7 +182,7 @@ def devloop_side(name: str, trusted: Path, base: str, head: str, key: str, fake:
             feedback=load_feedback(provider, trusted / review.feedback, trusted / review.lessons),
             usage=usage,
         )
-    except Exception as error:  # noqa: BLE001 - a replay reports every failure, typed
+    except Exception as error:  # a replay reports every failure, by its type in public
         side.error = f"{type(error).__name__}: {error}"
     return side
 
@@ -191,7 +191,10 @@ def findings(side: Side) -> list[tuple[str, str, int, str]]:
     """Return the findings a side posted as threads: severity, path, line and title."""
     found = []
     for comment in side.comments:
-        heading = comment["body"].splitlines()[0]
+        body, line = str(comment.get("body") or ""), comment.get("line")
+        if not body or not isinstance(line, int):
+            continue
+        heading = body.splitlines()[0]
         severity, _, title = heading.strip("*").partition(" — ")
         found.append((severity, comment["path"], int(comment["line"]), title))
     return sorted(found)
@@ -228,7 +231,7 @@ def compare(name: str, gtm: Side, dev: Side, public: bool = False) -> tuple[bool
             shown = side.error.split(":", 1)[0] if public else side.error[:300]
             lines.append(f"- {label} failed: `{shown}`")
         else:
-            lines.append(f"- {label}: {side.log}")
+            lines.append(f"- {label}: " + ("completed." if public else side.log))
     if not identical and not public:
         g = gtm.prompts[0] if gtm.prompts else ("", "")
         d = dev.prompts[0] if dev.prompts else ("", "")
@@ -270,7 +273,7 @@ def compare(name: str, gtm: Side, dev: Side, public: bool = False) -> tuple[bool
 
 
 def main(argv: list[str] | None = None) -> int:
-    """Replay the pull request; return 0 when every prompt matched, 1 when one did not."""
+    """Replay the pull request; return 0 when every prompt matched and no side failed."""
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--gtm", type=Path, required=True, help="gtm_toolkit's scripts/ and data/")
     parser.add_argument("--base", required=True, help="the pull request's base commit")
@@ -279,6 +282,10 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--fake", action="store_true", help="no model: compare prompts only")
     parser.add_argument("--public", action="store_true", help="counts and hashes only")
     args = parser.parse_args(argv)
+    names = [n.strip() for n in args.providers.split(",") if n.strip()]
+    unknown = sorted(set(names) - set(SCRIPTS))
+    if unknown or not names:
+        parser.error(f"--providers: choose from {', '.join(SCRIPTS)}; not {', '.join(unknown)}")
     head = run_git(["rev-parse", "HEAD"]).strip()
     base = run_git(["rev-parse", args.base]).strip()
     args.out.mkdir(parents=True, exist_ok=True)
@@ -293,7 +300,7 @@ def main(argv: list[str] | None = None) -> int:
         report.append("Fake model: prompts only.")
     report.append("")
     ok, raw = True, {}
-    for name in args.providers.split(","):
+    for name in names:
         key = "fake" if args.fake else os.environ.get(KEYS[name], "")
         quiet = io.StringIO()
         with contextlib.redirect_stdout(quiet if args.public else sys.stdout):
@@ -301,7 +308,7 @@ def main(argv: list[str] | None = None) -> int:
                 gtm = gtm_side(name, args.gtm.resolve(), base, head, key, args.fake)
                 dev = devloop_side(name, trusted, base, head, key, args.fake)
         identical, lines = compare(name, gtm, dev, args.public)
-        ok &= identical
+        ok &= identical and not gtm.error and not dev.error
         report += lines
         raw[name] = {"gtm_toolkit": gtm.__dict__, "devloop": dev.__dict__}
     (args.out / "replay.md").write_text("\n".join(report) + "\n", encoding="utf-8")

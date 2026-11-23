@@ -43,3 +43,18 @@ def test_a_public_report_holds_no_prompt_path_or_title() -> None:
     assert "SECRET" not in text and "private/app.py" not in text and "Secret title" not in text
     assert "1 of gtm_toolkit's have a devloop finding" in text
     assert "devloop failed: `ReviewError`" in text
+    assert "Posted." not in text  # a side's log line stays out of a public report
+
+
+def test_a_comment_without_a_heading_or_line_is_not_a_finding() -> None:
+    side = replay.Side(comments=[{"path": "a.py", "line": None, "body": "x"}, {"path": "a.py"}])
+    assert replay.findings(side) == []
+
+
+def test_an_unknown_reviewer_is_an_argument_error(tmp_path: Path) -> None:
+    import pytest
+
+    with pytest.raises(SystemExit):
+        replay.main(
+            ["--gtm", str(tmp_path), "--base", "x", "--out", str(tmp_path), "--providers", " gpt"]
+        )
