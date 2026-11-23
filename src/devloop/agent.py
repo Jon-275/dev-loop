@@ -121,5 +121,8 @@ def main(argv: Sequence[str], env: Mapping[str, str] | None = None) -> int:
             file=sys.stderr,
         )
     elif agent:
-        add_trailer(args.commit_msg, agent)
+        try:
+            add_trailer(args.commit_msg, agent)
+        except (OSError, UnicodeError, subprocess.SubprocessError) as error:
+            print(f"devloop agent: no trailer added ({type(error).__name__})", file=sys.stderr)
     return 0  # the hook never blocks a commit

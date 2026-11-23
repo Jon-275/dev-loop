@@ -128,3 +128,11 @@ def test_pre_commits_legacy_hook_from_another_tool_is_never_replaced(
     finally:
         os.chdir(cwd)
     assert (hooks / "commit-msg.legacy").read_text() == "#!/bin/sh\necho theirs\n"
+
+
+def test_an_unreadable_message_never_blocks_the_commit(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    env = {"DEVLOOP_AGENT": "codex/gpt-5"}
+    assert agent.main(["--commit-msg", str(tmp_path / "missing")], env) == 0
+    assert "no trailer added (FileNotFoundError)" in capsys.readouterr().err
