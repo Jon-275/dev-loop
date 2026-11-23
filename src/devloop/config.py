@@ -127,6 +127,22 @@ class Labels:
 
 
 @dataclass(frozen=True)
+class Lessons:
+    """``[lessons]``: the bug-class seed, the generated lessons page and where rules go.
+
+    ``devloop lessons`` counts accepted findings (``review.feedback``) into the seeded
+    classes, writes ``doc``, the top rules between the ``lessons:start`` and
+    ``lessons:end`` markers of ``agents``, and the reviewers' patterns (``review.lessons``).
+    ``repo`` (``owner/name``) makes PR numbers links; empty leaves them plain.
+    """
+
+    seed: str = "devloop/lessons_seed.json"
+    doc: str = "docs/lessons-learned.md"
+    agents: str = "AGENTS.md"
+    repo: str = ""
+
+
+@dataclass(frozen=True)
 class Agents:
     """``[agents]``: the coding agents in use and where rendered skills go."""
 
@@ -199,6 +215,7 @@ class Config:
     tiers: dict[int, tuple[str, ...]] = field(default_factory=dict)
     review: Review = field(default_factory=Review)
     labels: Labels = field(default_factory=Labels)
+    lessons: Lessons = field(default_factory=Lessons)
     agents: Agents = field(default_factory=Agents)
     skills: Skills = field(default_factory=Skills)
     council: Council = field(default_factory=Council)
@@ -232,6 +249,7 @@ def parse_config(text: str) -> Config:
         "tiers",
         "review",
         "labels",
+        "lessons",
         "agents",
         "skills",
         "council",
@@ -260,6 +278,7 @@ def parse_config(text: str) -> Config:
         },
     )
     labels = _table(data, "labels", {"prefixes", "wait_for", "wait_for_checks"})
+    lessons = _table(data, "lessons", {"seed", "doc", "agents", "repo"})
     agents = _table(data, "agents", {"tools", "skills_targets"})
     skills = _table(data, "skills", {"include", "project"})
     council = _table(data, "council", {"roles_dir", "max_reviewers", "require_status"})
@@ -295,6 +314,7 @@ def parse_config(text: str) -> Config:
                 labels, "labels.wait_for_checks", "wait_for_checks", d_lab.wait_for_checks
             ),
         ),
+        lessons=_lessons(lessons),
         agents=Agents(tools=_tools(agents, d_ag.tools), skills_targets=_targets(agents, d_ag)),
         skills=Skills(
             include=_strs(skills, "skills.include", "include", d_sk.include),
@@ -527,4 +547,18 @@ def _changelog(table: Mapping[str, Any]) -> Changelog:
         file=_rel_path(_str(table, "changelog.file", "file", d.file), "changelog.file"),
         sections=dict(sections),
         code=_strs(table, "changelog.code", "code", d.code),
+    )
+
+
+def _lessons(table: Mapping[str, Any]) -> Lessons:
+    """Validate ``[lessons]``: three paths inside the project and an optional ``owner/name``."""
+    d = Lessons()
+    repo = table.get("repo", "")
+    if not isinstance(repo, str) or (repo and not re.fullmatch(r"[\w.-]+/[\w.-]+", repo)):
+        raise ConfigError("lessons.repo must be owner/name")
+    return Lessons(
+        seed=_rel_path(_str(table, "lessons.seed", "seed", d.seed), "lessons.seed"),
+        doc=_rel_path(_str(table, "lessons.doc", "doc", d.doc), "lessons.doc"),
+        agents=_rel_path(_str(table, "lessons.agents", "agents", d.agents), "lessons.agents"),
+        repo=repo,
     )

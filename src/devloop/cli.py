@@ -40,6 +40,7 @@ def _parser() -> argparse.ArgumentParser:
         ("review", "review a pull request with a model and post each finding as a thread"),
         ("feedback", "collect accepted and rejected review findings into review.feedback"),
         ("labels", "in CI, check every review finding on a pull request has a labelled reply"),
+        ("lessons", "rank the bug classes review found and write the lessons and rules"),
     ):
         sub = commands.add_parser(name, help=text)
         sub.add_argument("--root", type=Path, default=Path.cwd(), help="project root")
@@ -48,6 +49,9 @@ def _parser() -> argparse.ArgumentParser:
         if name in ("size", "changes"):
             event = os.environ.get("GITHUB_EVENT_NAME", "")
             sub.add_argument("--event", default=event, help="github.event_name")
+        if name == "lessons":
+            notes = os.environ.get("REVIEW_NOTES_DIR") or None
+            sub.add_argument("--notes", type=Path, default=notes, help="council notes folder")
         if name == "main-health":
             sub.add_argument("--workflow", required=True, help="the workflow's name")
             sub.add_argument("--sha", required=True, help="the commit the run tested")
@@ -190,6 +194,10 @@ def main(argv: Sequence[str] | None = None) -> int:
         from devloop.review.labels import main as labels_main
 
         return labels_main(root, os.environ)
+    if args.command == "lessons":
+        from devloop.lessons import main as lessons_main
+
+        return lessons_main(root, args.notes)
     try:
         if args.command == "init":
             _report(init(root))
