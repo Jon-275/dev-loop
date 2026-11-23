@@ -38,6 +38,7 @@ def _parser() -> argparse.ArgumentParser:
         ("pr-open", "refuse a push to a branch whose PR already merged or closed"),
         ("main-health", "on a push to main, open or close the workflow's 'main is red' issue"),
         ("review", "review a pull request with a model and post each finding as a thread"),
+        ("feedback", "collect accepted and rejected review findings into review.feedback"),
     ):
         sub = commands.add_parser(name, help=text)
         sub.add_argument("--root", type=Path, default=Path.cwd(), help="project root")
@@ -180,6 +181,10 @@ def main(argv: Sequence[str] | None = None) -> int:
         return review_main(argv[1:])
     args = _parser().parse_args(argv)
     root: Path = args.root.resolve()
+    if args.command == "feedback":
+        from devloop.review.feedback import main as feedback_main
+
+        return feedback_main(root, os.environ)
     try:
         if args.command == "init":
             _report(init(root))
