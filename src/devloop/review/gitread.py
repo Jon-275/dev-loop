@@ -45,7 +45,10 @@ def run_git(args: list[str], cwd: str | Path | None = None) -> str:
 
 #: The working directory is the pull request's checkout, so its ``.gitattributes``
 #: is untrusted: no external diff program or textconv filter is ever run.
-SAFE_DIFF = ("diff", "--no-ext-diff", "--no-textconv")
+#: The empty tree: diffs read their attributes from it, so the pull request's
+#: ``.gitattributes`` cannot mark its own code binary (``-diff``) and hide it.
+EMPTY_TREE = "4b825dc642cb6eb9a060e54bf8d69288fbee4904"
+SAFE_DIFF = (f"--attr-source={EMPTY_TREE}", "diff", "--no-ext-diff", "--no-textconv", "--text")
 
 
 def run_git_diff(args: list[str]) -> str:
@@ -56,6 +59,12 @@ def run_git_diff(args: list[str]) -> str:
 def changed_files(base_sha: str, head_sha: str, files: Sequence[str]) -> list[str]:
     """Return every path matching ``files`` that the pull request changes, deletions included."""
     out = run_git_diff(["--name-only", "-z", f"{base_sha}...{head_sha}", "--", *files])
+    return [path for path in out.split("\0") if path]
+
+
+def every_changed(base_sha: str, head_sha: str) -> list[str]:
+    """Return every path the pull request changes, both sides of a rename, for its tier."""
+    out = run_git_diff(["--no-renames", "--name-only", "-z", f"{base_sha}...{head_sha}"])
     return [path for path in out.split("\0") if path]
 
 

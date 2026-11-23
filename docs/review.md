@@ -6,8 +6,9 @@ finding is fixed or answered.
 
 ## Reviewers
 
-Built in: `gemini`, `reflection` (an OpenAI-compatible API) and `openai` (set its
-`model`). Any other OpenAI-compatible API is a table of its own:
+Built in: `gemini` and `reflection` (an OpenAI-compatible API). Any other
+OpenAI-compatible API is a table of its own. Its status is the name capitalised, plus
+"review" (`Mine review`):
 
 ```toml
 [review.reviewers.mine]

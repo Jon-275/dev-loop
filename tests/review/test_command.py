@@ -124,12 +124,9 @@ def test_the_cli_runs_the_review_command(branch: Path, capsys: pytest.CaptureFix
     assert "GEMINI_API_KEY" in capsys.readouterr().out
 
 
-def test_the_workflow_learns_the_status_name_and_passes_the_key_by_one_name(
+def test_the_workflow_passes_every_key_by_one_name(
     branch: Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    assert command.status_context("reflection", branch) == 0
-    assert capsys.readouterr().out == "Reflection review\n"
-    assert command.status_context("nobody", branch) == 2
     asked: list[str] = []
     _fake_model(monkeypatch, asked)
     env = {command.SHARED_KEY: "shared"}

@@ -95,7 +95,7 @@ def test_the_project_overrides_a_reviewer_and_defines_new_ones() -> None:
     with pytest.raises(ReviewError, match="unknown reviewer 'nobody'"):
         providers.resolve("nobody", own)
     with pytest.raises(ReviewError, match="needs model"):
-        providers.resolve("openai", {})
+        providers.resolve("bare", {"bare": cfg.Reviewer(kind="openai", base_url="https://x")})
 
 
 def test_a_lens_comes_from_the_trusted_checkout_or_the_default(tmp_path: Path) -> None:

@@ -131,7 +131,7 @@ def review_body(
 
     if review.findings:
         lines += [
-            f"**Findings:** {counts}. Each one is an inline thread. Fix it or reply, then "
+            f"**Findings:** {counts}. Each blocking one is an inline thread. Fix it or reply, then "
             "resolve the thread: `main` merges only when every conversation is resolved.",
         ]
         if known:

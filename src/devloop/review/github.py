@@ -14,6 +14,7 @@ import urllib.request
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
 from datetime import UTC, datetime
+from http.client import HTTPException
 from typing import Any
 
 from devloop.review.model import (
@@ -34,10 +35,10 @@ _NEXT = re.compile(r'<([^>]+)>;\s*rel="next"')
 _SHA = re.compile(r"[0-9a-f]{40}")
 #: This reviewer's summary marker; ``base`` is the base branch tip it reviewed against.
 _SUMMARY = re.compile(
-    r"<!-- ([a-z]+-review) findings=\d+ posted=\d+ not_posted=\d+ unreviewed=(\d+) "
+    r"<!-- ([a-z][a-z0-9-]*-review) findings=\d+ posted=\d+ not_posted=\d+ unreviewed=(\d+) "
     r"base=([0-9a-f]{40})(?: since=[0-9a-f]{40})? -->\s*\Z"
 )
-_ANY_SUMMARY = re.compile(r"<!-- ([a-z]+-review) findings=")
+_ANY_SUMMARY = re.compile(r"<!-- ([a-z][a-z0-9-]*-review) findings=")
 
 
 @dataclass(frozen=True)
@@ -76,7 +77,7 @@ def http(method: str, url: str, token: str, body: object = None) -> Reply:
             status, raw, link = response.status, response.read(), response.headers.get("Link")
     except urllib.error.HTTPError as error:
         status, raw, link = error.code, error.read(), None
-    except (urllib.error.URLError, OSError) as error:
+    except (urllib.error.URLError, OSError, HTTPException) as error:
         raise ReviewError(f"GitHub could not be reached ({type(error).__name__})") from None
     try:
         data = json.loads(raw) if raw else None
@@ -92,6 +93,7 @@ def _get_all(
     """Return every item of a paginated listing, failing the check on any refusal."""
     items: list[Any] = []
     next_url: str | None = url
+    limit = pages
     while next_url is not None and pages:
         reply = send("GET", next_url, settings.github_token, None)
         if reply.status >= 400:
@@ -100,6 +102,8 @@ def _get_all(
             raise ReviewError(f"GitHub's listing of {what} has an unexpected shape")
         items += reply.data
         next_url, pages = reply.next_url, pages - 1
+    if next_url is not None:
+        raise ReviewError(f"GitHub's listing of {what} has more than {limit} pages")
     return items
 
 

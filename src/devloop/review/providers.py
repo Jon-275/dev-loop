@@ -1,5 +1,8 @@
 """The model reviewers devloop can run: Gemini and any OpenAI-compatible API.
 
+A reviewer's name, capitalised, is its title, and its commit status is "<Title> review",
+so a workflow can name the status before devloop is installed.
+
 A reviewer is a built-in default (:data:`BUILT_IN`) overlaid with the project's
 ``[review.reviewers.NAME]`` table. Its lens is ``<lenses_dir>/<name>.md`` from the trusted
 checkout when that file exists, else :data:`DEFAULT_LENS`. The endpoint and the key's
@@ -90,9 +93,6 @@ BUILT_IN = {
         "Beam-1.0-501B-A23B",
         "https://api.reflection.ai/openai/v1",
         "REFLECTION_API_KEY",
-    ),
-    "openai": Reviewer(
-        "openai", "OpenAI", "openai", "", "https://api.openai.com/v1", "OPENAI_API_KEY"
     ),
 }
 

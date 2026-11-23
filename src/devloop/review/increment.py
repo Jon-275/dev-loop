@@ -14,6 +14,7 @@ from collections.abc import Sequence
 from dataclasses import dataclass
 
 from devloop.review.gitread import (
+    EMPTY_TREE,
     SAFE_DIFF,
     changed_between,
     git_environment,
@@ -28,7 +29,6 @@ from devloop.review.prompt import prompt_path
 #: The empty tree. Merges read their attributes from it, so the pull request's
 #: ``.gitattributes`` cannot pick a merge driver (``merge=union`` would make a
 #: conflicted merge look clean, and so look like a plain merge of the base).
-EMPTY_TREE = "4b825dc642cb6eb9a060e54bf8d69288fbee4904"
 #: ``git merge-tree`` as the reviewers run it: no attributes from the pull request,
 #: and it writes only objects, never a ref, the index, the working tree or config.
 SAFE_MERGE_TREE = (

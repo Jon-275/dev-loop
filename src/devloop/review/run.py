@@ -17,6 +17,7 @@ from devloop.review.body import review_body
 from devloop.review.gitread import (
     changed_files,
     diff_lines,
+    every_changed,
     file_contents,
     renames,
     reviewable_blobs,
@@ -115,7 +116,7 @@ def run_review(
 
     """
     every = unshown_files(settings.base_sha, settings.head_sha, ())
-    tier = pr_tier(every, policy.tiers)
+    tier = pr_tier(every_changed(settings.base_sha, settings.head_sha), policy.tiers)
     if not routed(name, tier, policy.routes):
         status = f"Not routed: tier {tier} pull requests get no {provider.name} review"
         write_status(status)
@@ -153,6 +154,14 @@ def run_review(
     review = review_in_parts(
         provider, ask, effort, sections, contexts, skipped, notes, unshown, clock=clock
     )
+    unseen = [p for p in todo.paths if not _shown(sections[p]) and p not in contexts]
+    if unseen:  # neither its hunks nor its contents reached the model
+        listed = {path for path, _ in review.unreviewed}
+        review = replace(
+            review,
+            unreviewed=review.unreviewed
+            + tuple((p, UNSEEN_REASON) for p in unseen if p not in listed),
+        )
     marks = known() if review.findings else set()
     repeated: list[Finding] = []
     new: list[Finding] = []
@@ -167,7 +176,7 @@ def run_review(
         held = suppression_for(finding, learned)
         if other is not None:
             also_raised.append((finding, other))
-            if finding.severity == "P1":  # a P1 always gets its own thread
+            if finding.severity == "P1" and "P1" in policy.blocking:  # always a thread
                 new.append(finding)
         elif held is not None:
             suppressed.append((finding, held))
@@ -204,6 +213,15 @@ def run_review(
         write_status(status)
         return f"{done} {status}."
     return done
+
+
+#: Why a file is unreviewed when the prompt carried neither its hunks nor its contents.
+UNSEEN_REASON = "neither its diff nor its contents reached the reviewer (over the file limit)"
+
+
+def _shown(section: str) -> bool:
+    """Return whether a file's diff section shows the reviewer any changed line."""
+    return any(line.startswith("@@") for line in section.splitlines())
 
 
 def _place(
