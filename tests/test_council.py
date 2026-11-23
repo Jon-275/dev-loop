@@ -212,3 +212,20 @@ def test_doctor_reports_council_drift(tmp_path: Path) -> None:
     folder.mkdir(parents=True)
     (folder / "ux.md").write_text(_card("ux", '["web/**"]'), encoding="utf-8")
     assert diagnose(tmp_path) == ["devloop/council/ux.md: summoned_by matches no file: web/**"]
+
+
+def test_plan_without_git_or_with_an_unreadable_config_exits_two(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    import devloop.council
+
+    root = _project(tmp_path, {"payments": CARD})
+
+    def no_git(*args: object) -> str:
+        raise FileNotFoundError("git")
+
+    monkeypatch.setattr(devloop.council, "git", no_git)
+    assert main(["plan", "--root", str(root)]) == 2
+    (root / "devloop.toml").write_bytes(b"\xff\xfe")
+    assert main(["check", "--root", str(root)]) == 2
+    assert "devloop council:" in capsys.readouterr().err
