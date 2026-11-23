@@ -159,10 +159,12 @@ DEFAULT_SKILLS: tuple[str, ...] = (
     "devloop-setup",
     "lessons-intake",
     "pr-workflow",
+    "python-package",
     "release",
     "review-locally",
     "split-stack",
     "stateful-change",
+    "testing-and-ci",
 )
 
 

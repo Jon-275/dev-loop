@@ -7,10 +7,12 @@
     ".agents/skills/devloop-setup/SKILL.md",
     ".agents/skills/lessons-intake/SKILL.md",
     ".agents/skills/pr-workflow/SKILL.md",
+    ".agents/skills/python-package/SKILL.md",
     ".agents/skills/release/SKILL.md",
     ".agents/skills/review-locally/SKILL.md",
     ".agents/skills/split-stack/SKILL.md",
     ".agents/skills/stateful-change/SKILL.md",
+    ".agents/skills/testing-and-ci/SKILL.md",
     ".claude/skills/address-review/SKILL.md",
     ".claude/skills/council-design/SKILL.md",
     ".claude/skills/council-review/SKILL.md",
@@ -18,10 +20,12 @@
     ".claude/skills/devloop-setup/SKILL.md",
     ".claude/skills/lessons-intake/SKILL.md",
     ".claude/skills/pr-workflow/SKILL.md",
+    ".claude/skills/python-package/SKILL.md",
     ".claude/skills/release/SKILL.md",
     ".claude/skills/review-locally/SKILL.md",
     ".claude/skills/split-stack/SKILL.md",
     ".claude/skills/stateful-change/SKILL.md",
+    ".claude/skills/testing-and-ci/SKILL.md",
     ".github/skills/address-review/SKILL.md",
     ".github/skills/council-design/SKILL.md",
     ".github/skills/council-review/SKILL.md",
@@ -29,9 +33,11 @@
     ".github/skills/devloop-setup/SKILL.md",
     ".github/skills/lessons-intake/SKILL.md",
     ".github/skills/pr-workflow/SKILL.md",
+    ".github/skills/python-package/SKILL.md",
     ".github/skills/release/SKILL.md",
     ".github/skills/review-locally/SKILL.md",
     ".github/skills/split-stack/SKILL.md",
-    ".github/skills/stateful-change/SKILL.md"
+    ".github/skills/stateful-change/SKILL.md",
+    ".github/skills/testing-and-ci/SKILL.md"
   ]
 }
