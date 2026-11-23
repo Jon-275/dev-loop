@@ -6,7 +6,8 @@ finding is fixed or answered.
 
 ## Reviewers
 
-Built in: `gemini` and `reflection` (an OpenAI-compatible API). Any other
+Built in: `gemini`, `reflection` (an OpenAI-compatible API) and `anthropic`
+(`claude-opus-5-5`, through the official SDK: install `dev-loop[anthropic]`). Any other
 OpenAI-compatible API is a table of its own. Its status is the name capitalised, plus
 "review" (`Mine review`):
 
@@ -36,6 +37,15 @@ Nothing is hidden: the summary names every finding that got no thread and why (a
 earlier thread, another reviewer's thread, review feedback, below the blocking
 severities), every concern that is not a finding, and every file that was not reviewed.
 An incomplete review fails its status.
+
+## Anthropic
+
+The `anthropic` reviewer needs the SDK, so install devloop with its extra, for example
+`devloop: "dev-loop[anthropic] @ git+https://github.com/Jon-275/dev-loop@<tag>"` in
+`review.yml`'s caller. Requests stream, ask for JSON in the review schema at the run's
+effort, and use the API's server-side fallback (`fallbacks: "default"`): a request the
+model declines is re-run on a fallback model in the same call. Set `model` in
+`[review.reviewers.anthropic]` to use another Claude model.
 
 ## In CI
 

@@ -1,4 +1,4 @@
-"""The model reviewers devloop can run: Gemini and any OpenAI-compatible API.
+"""The model reviewers devloop can run: Gemini, any OpenAI-compatible API, and Anthropic.
 
 A reviewer's name, capitalised, is its title, and its commit status is "<Title> review",
 so a workflow can name the status before devloop is installed.
@@ -20,6 +20,7 @@ from pathlib import Path
 from typing import Any
 
 from devloop import config as cfg
+from devloop.review import claude
 from devloop.review.http import (
     ModelError,
     describe,
@@ -94,6 +95,15 @@ BUILT_IN = {
         "https://api.reflection.ai/openai/v1",
         "REFLECTION_API_KEY",
     ),
+    "anthropic": Reviewer(
+        "anthropic",
+        "Anthropic",
+        "anthropic",
+        "claude-opus-5-5",
+        "",
+        "ANTHROPIC_API_KEY",
+        max_output_tokens=64_000,
+    ),
 }
 
 
@@ -110,9 +120,15 @@ def resolve(name: str, overrides: Mapping[str, cfg.Reviewer]) -> Reviewer:
         raise ReviewError(
             f"unknown reviewer {name!r}: add [review.reviewers.{name}] to devloop.toml"
         )
-    if base is None:
+    key = f"{name.upper().replace('-', '_')}_API_KEY"
+    if base is None or (own is not None and own.kind and own.kind != base.kind):
+        # A new reviewer, or a built-in switched to another API: nothing of the old API's
+        # model, endpoint or limit carries over, so a key never goes to the old host.
+        limit = (
+            BUILT_IN["anthropic"].max_output_tokens if own and own.kind == "anthropic" else 65_536
+        )
         base = Reviewer(
-            name, name.capitalize(), "", "", "", f"{name.upper().replace('-', '_')}_API_KEY"
+            name, name.capitalize(), "", "", "", base.key if base else key, max_output_tokens=limit
         )
     if own is not None:
         base = replace(
@@ -123,13 +139,12 @@ def resolve(name: str, overrides: Mapping[str, cfg.Reviewer]) -> Reviewer:
             key=own.key or base.key,
             dimensions=own.dimensions or base.dimensions,
         )
-    if base.kind not in ("gemini", "openai"):
-        raise ReviewError(
-            f"reviewer {name!r} has kind {base.kind!r}; this devloop runs gemini or openai"
-        )
-    missing = [
-        what for what, value in (("model", base.model), ("base_url", base.base_url)) if not value
-    ]
+    if base.kind not in ("gemini", "openai", "anthropic"):
+        raise ReviewError(f"reviewer {name!r} has kind {base.kind!r}")
+    needed = [("model", base.model)]
+    if base.kind != "anthropic":  # the SDK knows Anthropic's endpoint
+        needed.append(("base_url", base.base_url))
+    missing = [what for what, value in needed if not value]
     if missing:
         raise ReviewError(
             f"reviewer {name!r} needs {' and '.join(missing)} in [review.reviewers.{name}]"
@@ -154,9 +169,11 @@ def provider_for(reviewer: Reviewer, lens: str) -> Provider:
         marker_prefix=f"{reviewer.name}-finding",
         summary_marker=f"{reviewer.name}-review",
         key_name=reviewer.key,
-        effort_label="thinking" if reviewer.kind == "gemini" else "reasoning",
-        is_transient=_gemini_transient if reviewer.kind == "gemini" else _openai_transient,
-        describe_error=describe,
+        effort_label={"gemini": "thinking", "anthropic": "effort"}.get(reviewer.kind, "reasoning"),
+        is_transient={"gemini": _gemini_transient, "anthropic": claude.is_transient}.get(
+            reviewer.kind, _openai_transient
+        ),
+        describe_error=claude.describe if reviewer.kind == "anthropic" else describe,
         lens=lens,
         finding_fields=f"- dimension: the one {tags} tag above the finding belongs to.\n"
         if dims
@@ -215,6 +232,7 @@ def asker(
     send: Send = post_json,
     sleep: Callable[[float], None] | None = None,
     timeout: float = REQUEST_TIMEOUT_SECONDS,
+    stream: claude.Stream | None = None,
 ) -> Ask:
     """Return the function that sends one prompt to ``reviewer`` and returns its JSON reply.
 
@@ -222,10 +240,13 @@ def asker(
     answered request's tokens are added to ``usage``, a cut-off reply's included, and each
     attempt that raised is counted as failed.
     """
-    schema = response_schema(tuple(reviewer.dimensions) or None, strict=reviewer.kind == "openai")
+    strict = reviewer.kind != "gemini"
+    schema = response_schema(tuple(reviewer.dimensions) or None, strict=strict)
+    pause = time.sleep if sleep is None else sleep
+    if reviewer.kind == "anthropic":
+        return _claude_asker(reviewer, provider, api_key, usage, schema, pause, timeout, stream)
     build = _gemini_request if reviewer.kind == "gemini" else _openai_request
     read = _gemini_reply if reviewer.kind == "gemini" else _openai_reply
-    pause = time.sleep if sleep is None else sleep
 
     def ask(prompt: str, effort: Effort) -> str:
         """Send ``prompt`` at ``effort`` and return the reply's text."""
@@ -240,6 +261,46 @@ def asker(
         except (ModelError, OSError, ValueError, http.client.HTTPException) as error:
             raise request_failed(provider, error) from None
         return read(reviewer, answer, usage)
+
+    return ask
+
+
+def _claude_asker(
+    reviewer: Reviewer,
+    provider: Provider,
+    api_key: str,
+    usage: Usage,
+    schema: dict[str, Any],
+    pause: Callable[[float], None],
+    timeout: float,
+    stream: claude.Stream | None,
+) -> Ask:
+    """Return the ask function for an Anthropic reviewer, through the official SDK.
+
+    Raises:
+        ReviewError: the ``anthropic`` extra is not installed.
+
+    """
+    if stream is None:
+        try:
+            stream = claude.sdk_stream(api_key, timeout, reviewer.base_url)
+        except ImportError:
+            raise ReviewError(
+                f"reviewer {reviewer.name!r} needs the SDK: install dev-loop[anthropic]"
+            ) from None
+    send = stream
+    errors = claude.api_errors()
+
+    def ask(prompt: str, effort: Effort) -> str:
+        """Send ``prompt`` at ``effort`` and return the reply's text."""
+        body = claude.request(reviewer.model, reviewer.max_output_tokens, prompt, effort, schema)
+        try:
+            message = with_retries(
+                lambda: send(body), provider, sleep=pause, on_failure=lambda _: usage.fail()
+            )
+        except errors as error:
+            raise request_failed(provider, error) from None
+        return claude.reply_text(provider, message, usage)
 
     return ask
 
