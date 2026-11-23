@@ -73,6 +73,7 @@ uv sync                          # install
 .venv/bin/mypy                   # strict, source and tests, 0 errors; no type: ignore
 .venv/bin/python -m pytest       # tests, including the installed-wheel test
 .venv/bin/devloop doctor --check # this repository's own layout has not drifted
+.venv/bin/mkdocs build --strict    # the docs site, 0 warnings
 ```
 
 When you change a tool's locations in `src/devloop/tools.py`, re-check them against that
