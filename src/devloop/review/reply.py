@@ -251,8 +251,23 @@ _SUBJECT = (
 _WORD = r"(?:`[^`\s]+`|[A-Za-z0-9_'-])+"
 _SPACE = r"[ \t]+"
 _END = r"[.!]?"
-#: The problems a "fixes" or "prevents" sentence may name as its object, last.
-_PROBLEM = r"(?:crash|crashes|race|races|leak|leaks|deadlock|deadlocks|hang|hangs|regression)"
+#: The holes a "closes" or "prevents" sentence may name: never a safeguard ("the check").
+_HOLE = r"(?:paths?|gaps?|holes?|windows?|cases?|routes?|loopholes?)"
+#: The only words the "capture failed X" shape allows before "to": what records the
+#: failures, never an outcome they could be counted as ("the success counter").
+_RECORDERS = frozenset(
+    "the its loop review model usage token metrics telemetry log logs report reports "
+    "marker markers".split()
+)
+#: The only words the "distinguish a failed X" shape allows before "to": a gate that
+#: judges reviewers, never a page that only shows them ("the docs").
+_CHECKERS = frozenset("the its labels label review status check checks gate".split())
+#: Verbs in a closing clause that say the hole can come back, so a risk remains.
+_COMES_BACK = re.compile(
+    r"\b(?:re-?open\w*|reintroduc\w*|resurfac\w*|bypass\w*|undo\w*|undid|revert\w*|"
+    r"reappear\w*|return\w*|come\s+back|comes\s+back)\b",
+    re.IGNORECASE,
+)
 #: The nouns a "failed" may name in a description ("failed model attempts").
 _FAILED_NOUN = (
     r"(?:attempts?|requests?|reviewers?|runs?|jobs?|calls?|checks?|writes?|builds?|steps?)"
@@ -267,13 +282,17 @@ _CONNECTIVES = frozenset(
 )
 #: Words that turn a ", with ... tests updated" tail into a missing or disabled check. The
 #: tail is never masked, so a concern word in it still counts.
-_TAIL_DENIALS = frozenset("no not without none never removed disabled skipped".split())
+_TAIL_DENIALS = frozenset(
+    "no not without none never removed disabled skipped xfail fewer flaky".split()
+)
 #: A hypothetical in a relative clause states the hole being closed ("could hide").
 _HYPOTHETICAL = frozenset({"could", "might", "would"})
 _FREE = r"(?:" + _SPACE + _WORD + r")"
 #: Whole-sentence templates for a sentence that only describes what the change does or
-#: fixes (gtm_toolkit #264-#271). The named ``free*`` groups are free text, checked for
-#: connectives; ``masked`` is the only part that may hold concern words.
+#: fixes: the three shapes of the live false concerns (gtm_toolkit #264-#271), and no
+#: more. Each looser version let a real concern through (three council rounds). Named
+#: ``free*``, ``clause``, ``recorders`` and ``checkers`` groups are free text, checked by
+#: :func:`_free_text_ok`; ``masked`` is the only part that may hold concern words.
 _DESCRIPTIONS = tuple(
     re.compile(template, re.IGNORECASE)
     for template in (
@@ -282,11 +301,11 @@ _DESCRIPTIONS = tuple(
         + _SPACE
         + r"(?:closes|prevents)"
         + _SPACE
-        + r"(?P<masked>(?:the|a|an)(?P<free1>"
-        + _FREE
-        + r"{1,3})"
+        + r"(?P<masked>(?:the|a|an)"
         + _SPACE
-        + r"(?:where|that|in"
+        + _HOLE
+        + _SPACE
+        + r"(?:where|in"
         + _SPACE
         + r"which)(?P<clause>"
         + _FREE
@@ -301,29 +320,10 @@ _DESCRIPTIONS = tuple(
         + _SPACE
         + r"(?:updated|added))?"
         + _END,
-        # "This PR fixes the crash in the sync loop." "This prevents a race between ..."
-        _SUBJECT
-        + _SPACE
-        + r"(?:fixes|prevents)"
-        + _SPACE
-        + r"(?P<masked>(?:the|a|an)(?P<free1>"
-        + _FREE
-        + r"{0,2})"
-        + _SPACE
-        + _PROBLEM
-        + r")"
-        + r"(?:"
-        + _SPACE
-        + r"(?:in|between|on|during)"
-        + _SPACE
-        + r"the(?P<free2>"
-        + _FREE
-        + r"{1,3}))?"
-        + _END,
         # "The change extends loop metrics to capture failed model attempts."
         _SUBJECT
         + _SPACE
-        + r"(?:extends|updates|hardens|adds)(?P<free1>"
+        + r"(?:extends|updates|hardens|adds)(?P<recorders>"
         + _FREE
         + r"{1,3})"
         + _SPACE
@@ -342,7 +342,7 @@ _DESCRIPTIONS = tuple(
         # "It also hardens the labels check to distinguish a failed reviewer from a pending one."
         _SUBJECT
         + _SPACE
-        + r"(?:extends|updates|hardens|adds)(?P<free1>"
+        + r"(?:extends|updates|hardens|adds)(?P<checkers>"
         + _FREE
         + r"{1,3})"
         + _SPACE
@@ -380,13 +380,19 @@ def _free_text_ok(found: re.Match[str]) -> bool:
     Y" states the hole the change closes; "that holds failed writes" may be a safeguard.
     """
     groups = found.groupdict()
-    tail = {w.lower() for w in (groups.get("tail") or "").split()}
+    tail = {w.lower() for w in re.split(r"[\s-]+", groups.get("tail") or "") if w}
     if tail & _TAIL_DENIALS:  # "with no tests added": it says what is missing
         return False
     free = " ".join(v for k, v in groups.items() if k.startswith("free") and v)
     clause = groups.get("clause") or ""
-    words = [w.strip("`").lower() for w in f"{free} {clause}".split()]
+    words = [w.strip("`").lower() for w in re.split(r"[\s-]+", f"{free} {clause}") if w]
     if any(w in _CONNECTIVES or w.endswith("n't") for w in words):
+        return False
+    for name, allowed in (("recorders", _RECORDERS), ("checkers", _CHECKERS)):
+        if groups.get(name) is not None:
+            if not set(re.split(r"[\s-]+", groups[name].strip().lower())) <= allowed:
+                return False
+    if clause and _COMES_BACK.search(clause):
         return False
     return not clause or bool(_HYPOTHETICAL & {w.lower() for w in clause.split()})
 

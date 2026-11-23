@@ -18,10 +18,8 @@ DESCRIBED = [
     # gtm_toolkit #264-#266
     "The change extends loop metrics to capture failed model attempts.",
     "It also hardens the labels check to distinguish a failed reviewer from a pending one.",
-    # a closing verb's object or relative clause names what was fixed
-    "This PR fixes the crash in the sync loop.",
+    # a closing verb's relative clause names the hole that was closed
     "The change closes the gap where tokens could leak into the log.",
-    "This prevents a race between the two writers.",
 ]
 
 STILL_LISTED = [
@@ -50,6 +48,9 @@ STILL_LISTED = [
     "The job failed silently on the last run.",
     "The change could break callers of the old API.",
     "This closes the paths where tokens could leak, with no tests added.",
+    # Gemini on dev-loop #31: closing or preventing a safeguard is the concern
+    "This prevents the check that could catch leaks.",
+    "This closes the fallback that would recover failed writes.",
     "This closes the paths where tokens could leak, with workflow tests disabled.",
 ]
 
@@ -166,7 +167,58 @@ COUNCIL_DELTA = [
 ]
 
 
-@pytest.mark.parametrize("sentence", STILL_LISTED + COUNCIL + COUNCIL_DELTA)
+#: The council's final delta check: concerns and borderline sentences that fit the
+#: second version of the templates, every one listed on main. Each must stay listed.
+COUNCIL_FINAL = [
+    "This closes the gap that a retry could reopen.",
+    "This closes the race that a restart could reintroduce.",
+    "This closes the hole that a forged header could bypass.",
+    "This prevents the leak that a second writer could reintroduce.",
+    "This closes the gap that a concurrent retry might reopen.",
+    "This closes the outbox that would retry failed writes.",
+    "This prevents the retry that would recover failed writes.",
+    "This prevents the cleanup that would release leaked connections.",
+    "This closes the fallback path that would replay lost rows.",
+    "This prevents the check that would catch stale scores.",
+    "This closes the race that might resurface on restart.",
+    "This closes the happy path where a retry could double-bill.",
+    "This closes the Postgres path where a retry could drop rows.",
+    "This closes the paths where a retry could still double-bill.",
+    "This closes the paths where a retry could yet double-bill.",
+    "This closes the paths where a retry could double-bill, with no tests added.",
+    "This closes the paths where a retry drops rows.",
+    "This fixes the wrong crash.",
+    "This fixes the wrong race.",
+    "This PR fixes the wrong regression.",
+    "This fixes a different crash.",
+    "This fixes the other leak.",
+    "This fixes the wrong deadlock in the writer.",
+    "This fixes the first crash.",
+    "This fixes the easier race.",
+    "This prevents the visible hang.",
+    "This fixes the secondary crash.",
+    "This fixes the race in the mock.",
+    "This fixes the leak in the tests.",
+    "This fixes the crash on the CI runner.",
+    "This fixes the crash on the failed path.",
+    "This fixes the crash in the stale cache.",
+    "This change updates the success counter to count failed checks.",
+    "This change updates the pass rate to count failed checks.",
+    "This change extends the approval tally to count failed reviewers.",
+    "It also updates the uptime metric to count failed runs.",
+    "This updates the green-build badge to count failed builds.",
+    "This change updates the billable total to count failed requests.",
+    "It also hardens the labels check to distinguish a failed reviewer from a failed one.",
+    "It also hardens the labels check to distinguish a failed reviewer from a crashed one.",
+    "This change updates the docs to distinguish a failed run from a green one.",
+    "This closes the paths where a retry could double-bill, with xfail tests added.",
+    "This closes the paths where a retry could double-bill, with fewer tests added.",
+    "This closes the paths where a retry could double-bill, with the failing tests updated.",
+    "This closes the paths where a retry could double-bill-not-always.",
+]
+
+
+@pytest.mark.parametrize("sentence", STILL_LISTED + COUNCIL + COUNCIL_DELTA + COUNCIL_FINAL)
 def test_a_concern_phrased_like_a_description_is_still_listed(sentence: str) -> None:
     assert names_concern(sentence)
     assert summary_concerns(f"Adds a sync. {sentence}") == [" ".join(sentence.split())]
