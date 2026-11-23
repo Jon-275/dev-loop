@@ -39,19 +39,24 @@ devloop doctor --check    # check nothing has drifted; run this in CI
   `devloop pr-open --install` makes it git's pre-push hook, once per clone.
 - `devloop main-health`: after a push to main, open a "main is red" issue for a failing
   workflow and close it when the workflow passes again.
+- `devloop review --provider NAME`: review a pull request with a model and post each
+  blocking finding as a thread (P3 findings go in the summary only). `--local` reviews
+  the current branch and prints the findings. See [docs/review.md](docs/review.md).
 
 ## In CI
 
-Two shared workflows run the checks, so every project's CI calls the same code:
+Three shared workflows run the checks, so every project's CI calls the same code:
 
 - [`pr-hygiene.yml`](.github/workflows/pr-hygiene.yml): `devloop doctor --check`,
   `size`, `changelog check --pr` and `changes`. Its `code` output is `"false"` for a
   docs-only pull request, so the caller can skip its code checks.
 - [`main-health.yml`](.github/workflows/main-health.yml): `devloop main-health`, as the
   caller's last job on every push to main.
+- [`review.yml`](.github/workflows/review.yml): `devloop review`, one job per reviewer,
+  from a caller on `pull_request_target`.
 
 Each file's header shows the job to copy. [dev-loop's own CI](.github/workflows/ci.yml)
-calls both.
+calls the first two, and [its reviews](.github/workflows/review-trusted.yml) the third.
 
 ## What `init` writes
 

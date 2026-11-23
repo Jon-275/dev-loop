@@ -37,6 +37,7 @@ def _parser() -> argparse.ArgumentParser:
         ("changes", "in CI, say whether a pull request changes only documentation"),
         ("pr-open", "refuse a push to a branch whose PR already merged or closed"),
         ("main-health", "on a push to main, open or close the workflow's 'main is red' issue"),
+        ("review", "review a pull request with a model and post each finding as a thread"),
     ):
         sub = commands.add_parser(name, help=text)
         sub.add_argument("--root", type=Path, default=Path.cwd(), help="project root")
@@ -173,6 +174,10 @@ def main(argv: Sequence[str] | None = None) -> int:
     argv = list(sys.argv[1:] if argv is None else argv)
     if argv[:1] == ["pr-open"]:  # the guard parses its own arguments
         return pr_open.main(argv[1:])
+    if argv[:1] == ["review"]:  # the review parses its own arguments
+        from devloop.review.command import main as review_main
+
+        return review_main(argv[1:])
     args = _parser().parse_args(argv)
     root: Path = args.root.resolve()
     try:
