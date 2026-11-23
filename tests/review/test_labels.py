@@ -148,3 +148,15 @@ def test_the_command_needs_its_settings(tmp_path: Path, capsys: pytest.CaptureFi
         lb.main(tmp_path, {"GITHUB_TOKEN": "t", "GITHUB_REPOSITORY": "o/r", "PR_NUMBER": "x"}) == 2
     )
     assert "numeric PR_NUMBER" in capsys.readouterr().err
+
+
+def test_a_check_name_is_sent_url_encoded() -> None:
+    sent: list[str] = []
+
+    def api(method: str, url: str, token: str, body: object) -> Reply:
+        """Record the URL and answer with no runs."""
+        sent.append(url)
+        return Reply(200, {"statuses": [], "check_runs": []})
+
+    lb.Github("t", "o/r", send=api, sleep=lambda _: None).reviews(HEAD, ["Lint & Test (C++)"])
+    assert sent[-1].endswith("check_name=Lint%20%26%20Test%20%28C%2B%2B%29&filter=latest")

@@ -24,6 +24,7 @@ from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
+from urllib.parse import quote
 
 from devloop.review import feedback as fb
 from devloop.review.github import GITHUB_API, Http, http
@@ -166,7 +167,7 @@ class Github:
         statuses = list(self.get(f"{base}/status?per_page=100").get("statuses", []))
         checks: list[dict[str, Any]] = []
         for name in wait_for_checks:
-            url = f"{base}/check-runs?check_name={name.replace(' ', '%20')}&filter=latest"
+            url = f"{base}/check-runs?check_name={quote(name, safe='')}&filter=latest"
             checks += list(self.get(url).get("check_runs", []))
         return statuses, checks
 
