@@ -47,6 +47,24 @@ copies one into the project to specialise.
 Together they fit the default reviewer budget: five reviewers for tier 1 (core,
 security, operations, claims, domain) and two for tier 2 (core, security).
 
+## Reporting the result
+
+The `council-review` skill writes its report to `review-pr<N>.md` in the notes folder,
+starting with frontmatter that records what was judged: the pull request, the full
+`head` commit reviewed, the `tier`, the `reviewers` that ran, the `verdict` (`"safe"` or
+`"not safe"`) and the `findings` per severity. `devloop council report --report <file>`
+judges it for the checkout's head:
+
+| The report | Council review |
+|---|---|
+| The change's tier is not in `council.require_status` | success: not required |
+| Missing, for another commit, at a lower tier, or missing a summoned reviewer | pending |
+| `not safe`, or any P0 or P1 | failure |
+| Safe, no P0 or P1, every reviewer, this head, this tier or riskier | success |
+
+Pending is never a pass: a report on an older commit judged that commit, so a new push
+needs a delta check and a new report. A report that cannot be read is an error (exit 2).
+
 ## Designing and proving a council
 
 Run the `council-design` skill. It scans the project for signals, interviews the owner,
