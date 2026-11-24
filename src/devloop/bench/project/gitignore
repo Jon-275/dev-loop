@@ -1,2 +1,6 @@
 __pycache__/
 .claude/settings.local.json
+# worktrees, one per task (AGENTS.md)
+.worktrees/
+# the review round's replies: comments on the pull request, not part of the change
+review/replies.json
