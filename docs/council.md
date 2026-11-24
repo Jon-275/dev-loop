@@ -47,6 +47,21 @@ copies one into the project to specialise.
 Together they fit the default reviewer budget: five reviewers for tier 1 (core,
 security, operations, claims, domain) and two for tier 2 (core, security).
 
+## Drift warnings
+
+`devloop doctor` and `devloop council check` print warnings, which never fail a check,
+when the council may no longer fit the project:
+
+- **A signal no role covers:** a dependency (in `pyproject.toml`, `requirements*.txt` or
+  `package.json`, at the root or one folder down) or a file that calls for a library
+  pack the council has no card for, such as `stripe` for payments or `*.tf` for
+  infrastructure. Add the pack (`devloop council add <pack>`) or, if the owner decided
+  against it, list it in `council.declined`.
+- **A decision no role enforces:** a file in `docs/decisions/` that no card names under
+  "Decisions enforced". Name it in a card if a review should check it.
+
+A project without role cards gets no warnings.
+
 ## Designing and proving a council
 
 Run the `council-design` skill. It scans the project for signals, interviews the owner,

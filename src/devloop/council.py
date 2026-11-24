@@ -33,7 +33,8 @@ import json
 import re
 import subprocess
 import sys
-from collections.abc import Mapping, Sequence
+import tomllib
+from collections.abc import Iterator, Mapping, Sequence
 from dataclasses import dataclass
 from fnmatch import fnmatchcase
 from importlib import resources
@@ -284,6 +285,111 @@ def problems(root: Path, config: Config | None = None) -> list[str]:
     return found
 
 
+#: What calls for a library pack: dependency names, and file globs (``*`` matches ``/``).
+SIGNALS: dict[str, tuple[tuple[str, ...], tuple[str, ...]]] = {
+    "payments": (("stripe", "braintree", "adyen", "paypalrestsdk", "squareup"), ()),
+    "ml-statistics": (
+        ("scikit-learn", "torch", "tensorflow", "xgboost", "lightgbm", "statsmodels"),
+        (),
+    ),
+    "llm-apps": (("anthropic", "@anthropic-ai/sdk", "openai", "langchain", "litellm"), ()),
+    "frontend-ux": (("react", "vue", "svelte", "@angular/core"), ()),
+    "mobile": (("react-native", "expo"), ("*AndroidManifest.xml", "*pubspec.yaml")),
+    "infrastructure": ((), ("*.tf", "*Chart.yaml", "*kustomization.yaml")),
+    "data-engineering": (("sqlalchemy", "alembic", "dbt-core"), ("*migrations/*",)),
+    "crm-revops": (("simple-salesforce", "hubspot-api-client"), ()),
+}
+_NAME = re.compile(r"^\s*(@?[A-Za-z0-9][A-Za-z0-9._/-]*)")
+#: Where dependencies are declared: at the root or one folder down.
+_MANIFESTS = ("pyproject.toml", "requirements*.txt", "package.json")
+
+
+def _names(specs: object) -> Iterator[str]:
+    """Yield the lower-case package names in a list of requirement strings."""
+    for spec in specs if isinstance(specs, list) else []:
+        found = _NAME.match(spec) if isinstance(spec, str) else None
+        if found:
+            yield found.group(1).lower()
+
+
+def _declared(path: Path) -> Iterator[str]:
+    """Yield the dependency names one manifest declares; an unreadable one declares none."""
+    try:
+        text = path.read_text(encoding="utf-8")
+        if path.name == "package.json":
+            data = json.loads(text)
+            for key in ("dependencies", "devDependencies", "peerDependencies"):
+                yield from (n.lower() for n in (data.get(key) or {}))
+        elif path.name == "pyproject.toml":
+            data = tomllib.loads(text)
+            project = data.get("project", {})
+            yield from _names(project.get("dependencies"))
+            for group in (project.get("optional-dependencies") or {}).values():
+                yield from _names(group)
+            for group in (data.get("dependency-groups") or {}).values():
+                yield from _names(group)
+        else:
+            yield from _names(text.splitlines())
+    except (OSError, UnicodeDecodeError, ValueError, AttributeError):
+        return
+
+
+def _dependencies(root: Path, files: Sequence[str]) -> dict[str, str]:
+    """Return each declared dependency name and the manifest that declares it."""
+    found: dict[str, str] = {}
+    for rel in files:
+        name = rel.rsplit("/", 1)[-1]
+        if rel.count("/") <= 1 and any(fnmatchcase(name, m) for m in _MANIFESTS):
+            for dep in _declared(root / rel):
+                found.setdefault(dep, rel)
+    return found
+
+
+def warnings(root: Path, config: Config | None = None) -> list[str]:
+    """Return what the council may not cover (plan 7.5); warnings never fail a check.
+
+    A signal (a dependency or file) that calls for a library pack no card covers and the
+    owner did not decline, a decision file no role enforces, and an unknown declined pack.
+    """
+    try:
+        config = config or load_config(root / CONFIG_FILE)
+        label = config.council.roles_dir
+        cards = load_cards(root / label, label)
+    except (ConfigError, CouncilError, OSError, UnicodeDecodeError):
+        return []  # a broken config or card is a problem, reported by diagnose()
+    if not cards:
+        return []
+    found: list[str] = []
+    packs = set(library()) - set(ALWAYS)
+    found += [
+        f"council.declined names {name}, which is not a library pack"
+        for name in config.council.declined
+        if name not in packs
+    ]
+    files = project_files(root)
+    deps = _dependencies(root, files)
+    for pack, (names, globs) in SIGNALS.items():
+        if pack in cards or pack in config.council.declined:
+            continue
+        dep = next((n for n in names if n in deps), None)
+        hit = next((f for f in files for g in globs if fnmatchcase(f, g)), None)
+        evidence = f"{dep} in {deps[dep]}" if dep else hit
+        if evidence:
+            found.append(
+                f"signal: {evidence} calls for the {pack} pack, which no role card covers; "
+                f"add it (devloop council add {pack}) or list it in council.declined"
+            )
+    enforced = {d for card in cards.values() for d in card.decisions}
+    for rel in files:
+        if fnmatchcase(rel, "docs/decisions/*.md") and not rel.endswith("/README.md"):
+            if rel not in enforced:
+                found.append(
+                    f"{rel} is enforced by no role; name it in a card's Decisions enforced "
+                    "if a review should check it"
+                )
+    return found
+
+
 def _changed(root: Path, base: str) -> list[str]:
     """Return the files changed on this branch since it left ``base``."""
     return [p for p in git(root, "diff", "--name-only", "-z", f"{base}...HEAD").split("\0") if p]
@@ -322,6 +428,8 @@ def main(argv: Sequence[str]) -> int:
         config = load_config(root / CONFIG_FILE)
         if args.action == "check":
             found = problems(root, config)
+            for warning in warnings(root, config):
+                print(f"warning: {warning}")
             for problem in found:
                 print(f"problem: {problem}")
             print(f"{len(found)} problem(s) found" if found else "council is current")

@@ -238,6 +238,10 @@ def main(argv: Sequence[str] | None = None) -> int:
             return _main_health(args)
         else:
             problems = diagnose(root)
+            from devloop.council import warnings
+
+            for warning in warnings(root):
+                print(f"warning: {warning}")
             for problem in problems:
                 print(f"problem: {problem}")
             print(f"{len(problems)} problem(s) found" if problems else "healthy")
