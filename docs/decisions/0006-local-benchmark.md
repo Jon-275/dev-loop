@@ -19,9 +19,8 @@ that the benchmark runs when a maintainer runs it, not on a schedule.
 
 - The benchmark's checks and its fixture are tested in CI with scripted solutions, so no
   agent and no key is needed there.
-- Once the runner lands (the next step), run the benchmark before a release and after a
-  supported agent CLI changes, and note its scorecard in the release pull request; the
-  `release` skill gains that step with the runner.
+- Run `devloop bench` before a release and after a supported agent CLI changes, and put
+  its scorecard in the release pull request (the `release` skill's step 5).
 
 ## Scope
 

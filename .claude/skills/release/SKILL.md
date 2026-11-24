@@ -19,7 +19,8 @@ A release is its own small PR, merged like any other, then a tag on its merge co
    Move the new entries under a `## <version> - <date>` heading and leave the empty
    `[Unreleased]` headings in place.
 5. **Run every gate**, including `devloop doctor --check`, then open the PR with
-   `pr-workflow` and wait for its checks.
+   `pr-workflow` and wait for its checks. When this project is devloop itself, also run
+   `devloop bench` locally and put its scorecard in the PR description.
 6. **Merge**, then tag the merge commit and publish the release with that version's
    changelog section as the notes:
    `gh release create v<version> --target <merge sha> --notes-file <notes>`.
