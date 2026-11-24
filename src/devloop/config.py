@@ -183,6 +183,8 @@ class Council:
     roles_dir: str = "devloop/council"
     max_reviewers: dict[int, int] = field(default_factory=lambda: {1: 5, 2: 2})
     require_status: tuple[int, ...] = (1,)
+    #: Library packs the owner chose not to add; their signals are not warned about.
+    declined: tuple[str, ...] = ()
 
 
 DEFAULT_SECTIONS = {
@@ -299,7 +301,7 @@ def parse_config(text: str) -> Config:
     lessons = _table(data, "lessons", {"seed", "doc", "agents", "repo"})
     agents = _table(data, "agents", {"tools", "skills_targets"})
     skills = _table(data, "skills", {"include", "project"})
-    council = _table(data, "council", {"roles_dir", "max_reviewers", "require_status"})
+    council = _table(data, "council", {"roles_dir", "max_reviewers", "require_status", "declined"})
     log = _table(data, "changelog", {"dir", "file", "sections", "code"})
     docs = _table(data, "docs", {"files", "tests"})
     d_pr, d_rev, d_lab, d_ag, d_sk, d_co = PR(), Review(), Labels(), Agents(), Skills(), Council()
@@ -350,6 +352,7 @@ def parse_config(text: str) -> Config:
                 _non_negative_int,
             ),
             require_status=_require_status(council, d_co.require_status),
+            declined=_strs(council, "council.declined", "declined", d_co.declined),
         ),
         changelog=_changelog(log),
         docs=Docs(

@@ -93,6 +93,22 @@ jobs:
 The status is an attestation: anyone who can write statuses can post one, so require it
 alongside branch protection that limits who can push.
 
+## Drift warnings
+
+`devloop doctor` and `devloop council check` print warnings, which never fail a check,
+when the council may no longer fit the project:
+
+- **A signal no role covers:** a dependency (in `pyproject.toml`, `requirements*.txt` or
+  `package.json`, at the root or one folder down) or a file that calls for a library
+  pack the council has no card for, such as `stripe` for payments or `*.tf` for
+  infrastructure. Add the pack (`devloop council add <pack>`) or, if the owner decided
+  against it, list it in `council.declined`. A pack's card keeps the pack's name
+  (`payments.md`) when it is specialised, so the signal counts as covered.
+- **A decision no role enforces:** a file in `docs/decisions/` that no card names under
+  "Decisions enforced". Name it in a card if a review should check it.
+
+A project without role cards gets no warnings.
+
 ## Designing and proving a council
 
 Run the `council-design` skill. It scans the project for signals, interviews the owner,
