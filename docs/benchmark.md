@@ -20,8 +20,11 @@ devloop bench --command /path/to/claude --timeout 600
 ```
 
 Each task runs in a fresh copy of the fixture project under
-`.devloop/bench/<time>/<task>/work`, next to the agent's log (`agent.log`). The
-scorecard is printed and saved as `scorecard.md` and `scorecard.json`. Exit 0 means
+`~/.cache/devloop/bench/<time>/<task>/work` (`$XDG_CACHE_HOME` when set, or `--out`),
+outside any working tree, next to the agent's log (`agent.log`). If the agent is still
+running at the time limit (`--timeout`, 900 seconds), it and everything it started are
+stopped, and what it left is judged. The scorecard is printed and saved as
+`scorecard.md` and `scorecard.json`. Exit 0 means
 every check passed, 1 a check failed, 2 the benchmark could not run (for example, the
 agent CLI is missing). The logs stay on your machine; do not paste them anywhere public.
 

@@ -15,6 +15,8 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import shutil
+import signal
 import subprocess
 import sys
 import time
@@ -45,7 +47,7 @@ ALLOWED_TOOLS = (
 DEFAULT_TIMEOUT = 900
 #: The most agentic turns one task may take.
 MAX_TURNS = 50
-INSTALL = {"claude": "install Claude Code: https://docs.anthropic.com/en/docs/claude-code"}
+INSTALL = {"claude": "install Claude Code and sign in: https://code.claude.com/docs"}
 
 
 def claude_command(binary: str) -> AgentCommand:
@@ -90,8 +92,11 @@ class Run:
 
 
 def _env() -> dict[str, str]:
-    """Return the agent's environment: this devloop and its Python first on ``PATH``."""
-    env = dict(os.environ)
+    """Return the agent's environment: this devloop and its Python first on ``PATH``.
+
+    The caller's ``GIT_*`` variables are dropped, so the agent's git acts on the fixture.
+    """
+    env = {k: v for k, v in os.environ.items() if not k.startswith("GIT_")}
     env["PATH"] = os.pathsep.join([str(Path(sys.executable).parent), env.get("PATH", "")])
     env.pop("VIRTUAL_ENV", None)
     return env
@@ -111,22 +116,40 @@ def run_task(
     started = time.monotonic()
     agent_exit: int | None
     with log.open("w", encoding="utf-8") as sink:
+        # Its own process group, so a time limit stops everything the agent started.
+        agent = subprocess.Popen(
+            command(task.prompt),
+            cwd=work,
+            env=_env(),
+            stdin=subprocess.DEVNULL,
+            stdout=sink,
+            stderr=subprocess.STDOUT,
+            start_new_session=True,
+        )
         try:
-            done = subprocess.run(
-                command(task.prompt),
-                cwd=work,
-                env=_env(),
-                stdin=subprocess.DEVNULL,
-                stdout=sink,
-                stderr=subprocess.STDOUT,
-                timeout=timeout,
-                check=False,
-            )
-            agent_exit = done.returncode
+            agent_exit = agent.wait(timeout=timeout)
         except subprocess.TimeoutExpired:
             agent_exit = None
+        finally:
+            _stop(agent)
     seconds = time.monotonic() - started
     return Run(task.name, checks.run(task, work, base), seconds, agent_exit, log)
+
+
+def _stop(agent: subprocess.Popen[bytes]) -> None:
+    """Kill the agent's process group: whatever it started, still running or not."""
+    try:
+        os.killpg(agent.pid, signal.SIGKILL)
+    except (ProcessLookupError, PermissionError):
+        pass
+    agent.wait()
+
+
+def default_out() -> Path:
+    """Return where runs go by default: the user's cache, outside any working tree."""
+    cache = os.environ.get("XDG_CACHE_HOME") or str(Path.home() / ".cache")
+    stamp = datetime.now(UTC).strftime("%Y%m%dT%H%M%SZ")
+    return Path(cache) / "devloop" / "bench" / stamp
 
 
 def _ending(run: Run) -> str:
@@ -185,23 +208,20 @@ def main(argv: Sequence[str]) -> int:
     parser.add_argument("--out", type=Path, help="where runs and the scorecard go")
     parser.add_argument("--timeout", type=int, default=DEFAULT_TIMEOUT, help="seconds per task")
     args = parser.parse_args(list(argv))
-    names = args.task or list(TASKS)
+    names = list(dict.fromkeys(args.task or TASKS))
     unknown = sorted(set(names) - set(TASKS))
     if unknown:
         print(f"devloop bench: unknown task(s): {', '.join(unknown)}", file=sys.stderr)
         return 2
-    stamp = datetime.now(UTC).strftime("%Y%m%dT%H%M%SZ")
-    out: Path = (args.out or Path.cwd() / ".devloop" / "bench" / stamp).resolve()
+    binary = args.command or args.tool
+    if shutil.which(binary) is None:
+        hint = INSTALL.get(args.tool, "install it")
+        print(f"devloop bench: {binary} not found; {hint}", file=sys.stderr)
+        return 2
+    out: Path = (args.out or default_out()).resolve()
     out.mkdir(parents=True, exist_ok=True)
-    command = AGENTS[args.tool](args.command or args.tool)
-    runs: list[Run] = []
-    for name in names:
-        try:
-            runs.append(run_task(TASKS[name], args.tool, command, out, args.timeout))
-        except FileNotFoundError as exc:
-            hint = INSTALL.get(args.tool, "install it")
-            print(f"devloop bench: {exc.filename} not found; {hint}", file=sys.stderr)
-            return 2
+    command = AGENTS[args.tool](binary)
+    runs = [run_task(TASKS[name], args.tool, command, out, args.timeout) for name in names]
     _save(runs, args.tool, out)
     print(scorecard(runs, args.tool), end="")
     print(f"Runs, agent logs and the scorecard: {out}")

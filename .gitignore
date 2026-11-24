@@ -13,6 +13,3 @@ build/
 
 # mkdocs build output
 site/
-
-# devloop bench runs and agent logs (local only, decision 0006)
-.devloop/bench/

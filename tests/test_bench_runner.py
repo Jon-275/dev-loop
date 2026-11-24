@@ -101,6 +101,7 @@ def test_bench_writes_the_scorecard_and_exits_by_its_verdict(
     """``devloop bench`` prints the scorecard, saves it as JSON and exits 1 on a failed check."""
     script = tmp_path / "agent.py"
     script.write_text("", encoding="utf-8")
+    script.chmod(0o755)
     monkeypatch.setitem(
         runner.AGENTS, "claude", lambda binary: lambda p: [sys.executable, binary, p]
     )
@@ -119,3 +120,52 @@ def test_bench_without_the_agent_installed_says_how_to_install_it(
     missing = str(tmp_path / "no-such-claude")
     assert main(["bench", "--command", missing, "--out", str(tmp_path / "out")]) == 2
     assert "not found" in capsys.readouterr().err
+
+
+def test_a_timed_out_agent_s_children_are_stopped_too(tmp_path: Path) -> None:
+    """Nothing the agent started keeps changing the fixture after the time limit."""
+    late = tmp_path / "late.txt"
+    child = tmp_path / "child.py"
+    child.write_text(f"import time; time.sleep(3); open({str(late)!r}, 'w').write('x')\n")
+    code = (
+        "import subprocess, sys, time\n"
+        f"subprocess.Popen([sys.executable, {str(child)!r}])\n"
+        "time.sleep(30)\n"
+    )
+    run = runner.run_task(TASKS["fix-bug"], "claude", _agent(tmp_path, code), tmp_path / "o", 1)
+    assert run.agent_exit is None
+    import time
+
+    time.sleep(4)
+    assert not late.exists()
+
+
+def test_the_agent_sees_no_git_variables_of_the_caller(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A GIT_DIR in the caller's shell never points the agent's git elsewhere."""
+    monkeypatch.setenv("GIT_DIR", str(tmp_path / "elsewhere"))
+    code = "import os, sys; sys.exit(1 if any(k.startswith('GIT_') for k in os.environ) else 0)"
+    run = runner.run_task(TASKS["fix-bug"], "claude", _agent(tmp_path, code), tmp_path / "o")
+    assert run.agent_exit == 0
+
+
+def test_runs_go_outside_the_project_by_default(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """Agent logs never land in the working tree the command was run from."""
+    project = tmp_path / "project"
+    project.mkdir()
+    monkeypatch.chdir(project)
+    monkeypatch.setenv("XDG_CACHE_HOME", str(tmp_path / "cache"))
+    script = tmp_path / "agent.py"
+    script.write_text("", encoding="utf-8")
+    script.chmod(0o755)
+    monkeypatch.setitem(
+        runner.AGENTS, "claude", lambda binary: lambda p: [sys.executable, binary, p]
+    )
+    main(["bench", "--command", str(script), "--task", "fix-bug", "--task", "fix-bug"])
+    assert list(project.iterdir()) == []
+    runs = list((tmp_path / "cache" / "devloop" / "bench").glob("*/fix-bug/agent.log"))
+    assert len(runs) == 1
+    assert str(runs[0].parents[1]) in capsys.readouterr().out
