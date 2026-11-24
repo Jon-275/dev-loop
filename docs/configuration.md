@@ -8,7 +8,7 @@ POSIX paths from the project root, and `*` also crosses `/`.
 
 | Key | Default | Meaning |
 |---|---|---|
-| `version` | (required) | The devloop minor version the project is pinned to, such as `"0.6"`. `devloop doctor` fails when the installed devloop differs. |
+| `version` | (required) | The devloop minor version the project is pinned to, such as `"0.7"`. `devloop doctor` fails when the installed devloop differs. |
 
 ## [pr]
 

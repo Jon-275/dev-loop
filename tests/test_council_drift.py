@@ -12,10 +12,13 @@ from pathlib import Path
 
 import pytest
 
+from devloop import __version__
 from devloop.config import load_config
 from devloop.council import warnings
 from devloop.doctor import diagnose
 
+#: The installed minor version, so doctor never sees a version mismatch.
+MINOR = ".".join(__version__.split(".")[:2])
 CARD = (
     '---\nname: {name}\ntitle: T\nsummoned_by: ["**"]\ntiers: [1]\nreviewer: r\n---\n'
     "Mandate: m\nChecks: c\nSeverity anchors: s\nProof methods: p\n{extra}"
@@ -26,7 +29,7 @@ def _project(tmp_path: Path, files: dict[str, str], council: str = "") -> Path:
     """Write a project with an architect card, ``files`` and a ``[council]`` table."""
     root = tmp_path / "p"
     files = {
-        "devloop.toml": f'[framework]\nversion = "0.6"\n\n[council]\n{council}\n',
+        "devloop.toml": f'[framework]\nversion = "{MINOR}"\n\n[council]\n{council}\n',
         "devloop/council/architect.md": CARD.format(name="architect", extra=""),
         **files,
     }
