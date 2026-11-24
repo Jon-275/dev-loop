@@ -36,8 +36,9 @@ council is a product decision the owner makes; this skill drafts it.
    recall (known defects found) and precision (findings that are real). A role whose area
    had findings but catches none is under-specified. The owner sets the bar, for example
    70% of replayed P0 and P1 defects.
-7. **Record it** in one PR: the cards, and `docs/decisions/council.md` with each role and
-   why it was chosen (use `decision-record`). Run `devloop doctor --check`.
+7. **Record it** in one PR: the cards, and a decision record with each role and why it
+   was chosen, named the way `decision-record` names them
+   (`docs/decisions/NNNN-council.md`). Run `devloop doctor --check`.
 
 ## Quarterly review
 
