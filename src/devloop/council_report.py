@@ -78,6 +78,8 @@ def _fields(text: str) -> dict[str, object]:
         key = key.strip()
         if key not in KEYS:
             raise ReportError(f"{key} is not a report key ({', '.join(KEYS)})")
+        if key in fields:
+            raise ReportError(f"{key} appears twice in the report")
         try:
             fields[key] = json.loads(value.strip())
         except ValueError:
@@ -108,11 +110,11 @@ def parse_report(text: str) -> Report:
         raise ReportError("reviewers must be a list of reviewer names")
     if not isinstance(verdict, str) or verdict not in VERDICTS:
         raise ReportError(f"verdict must be one of {', '.join(VERDICTS)}")
-    if not isinstance(findings, dict) or not set(findings) <= set(SEVERITIES):
-        raise ReportError(f"findings must map {', '.join(SEVERITIES)} to counts")
+    if not isinstance(findings, dict) or set(findings) != set(SEVERITIES):
+        raise ReportError(f"findings must give a count for each of {', '.join(SEVERITIES)}")
     if not all(_count(n) for n in findings.values()):
         raise ReportError("findings must be whole, non-negative counts")
-    counts = {severity: int(findings.get(severity, 0)) for severity in SEVERITIES}
+    counts = {severity: int(findings[severity]) for severity in SEVERITIES}
     return Report(pr, head, tier, tuple(reviewers), verdict, counts)
 
 
@@ -121,12 +123,24 @@ def _limit(text: str) -> str:
     return text if len(text) <= DESCRIPTION_LIMIT else text[: DESCRIPTION_LIMIT - 1] + "…"
 
 
-def judge(report: Report | None, head: str, plan: Plan, required: Sequence[int]) -> Verdict:
-    """Return the Council review verdict for ``head``, whose change ``plan`` describes."""
+def judge(
+    report: Report | None,
+    head: str,
+    plan: Plan,
+    required: Sequence[int],
+    pr: int | None = None,
+) -> Verdict:
+    """Return the Council review verdict for ``head``, whose change ``plan`` describes.
+
+    ``pr``, when known, is the pull request being judged: a report for another one is
+    pending, since one pull request's review never stands for another's.
+    """
     if plan.tier not in required:
         return Verdict("success", f"tier {plan.tier}: council review not required")
     if report is None:
         return Verdict("pending", f"no council report for {head[:7]} (tier {plan.tier})")
+    if pr is not None and report.pr != pr:
+        return Verdict("pending", f"the report is for #{report.pr}, not #{pr}")
     if report.head != head:
         return Verdict(
             "pending",

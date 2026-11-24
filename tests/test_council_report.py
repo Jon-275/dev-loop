@@ -8,10 +8,10 @@ Anything not judged is pending, never a pass, and anything unreadable is an erro
 from __future__ import annotations
 
 import itertools
-import subprocess
 from pathlib import Path
 
 import pytest
+from conftest import git
 
 from devloop.council import Plan
 from devloop.council_report import Report, ReportError, judge, parse_report
@@ -93,7 +93,11 @@ def test_only_one_combination_ever_passes() -> None:
     tiers = ["1", "2"]
     reviewers = ['["core", "security"]', '["core"]', '["core", "security", "extra"]']
     verdicts = ['"safe"', '"not safe"']
-    findings = ['{"P0": 0, "P1": 0}', '{"P0": 1, "P1": 0}', '{"P0": 0, "P1": 1}']
+    findings = [
+        '{"P0": 0, "P1": 0, "P2": 0, "P3": 0}',
+        '{"P0": 1, "P1": 0, "P2": 0, "P3": 0}',
+        '{"P0": 0, "P1": 1, "P2": 0, "P3": 0}',
+    ]
     passing = []
     for combo in itertools.product(heads, tiers, reviewers, verdicts, findings):
         head, tier, who, said, found = combo
@@ -104,6 +108,14 @@ def test_only_one_combination_ever_passes() -> None:
         (heads[0], "1", reviewers[0], verdicts[0], findings[0]),
         (heads[0], "1", reviewers[2], verdicts[0], findings[0]),
     ]
+
+
+def test_a_report_for_another_pull_request_is_pending() -> None:
+    """One pull request's review never stands for another's, even on the same commit."""
+    assert judge(_report(), HEAD, PLAN, required=(1,), pr=12).state == "success"
+    verdict = judge(_report(), HEAD, PLAN, required=(1,), pr=15)
+    assert verdict.state == "pending"
+    assert "#12" in verdict.description
 
 
 def test_a_riskier_tier_than_the_change_counts() -> None:
@@ -126,6 +138,9 @@ def test_a_riskier_tier_than_the_change_counts() -> None:
         (_text(reviewers='"core"'), "reviewers"),
         (_text(owner='"me"'), "owner"),
         (_text(head=""), "head is missing"),
+        (_text(findings='{"P2": 1}'), "P0, P1"),
+        (_text(findings="{}"), "P0, P1"),
+        (_text().replace('verdict: "safe"', 'verdict: "not safe"\nverdict: "safe"'), "twice"),
     ],
 )
 def test_a_malformed_report_is_an_error_never_a_verdict(text: str, message: str) -> None:
@@ -148,26 +163,9 @@ def _repo(tmp_path: Path) -> Path:
     )
     (root / "src").mkdir()
     (root / "src" / "app.py").write_text("x = 1\n", encoding="utf-8")
-    for args in (["init", "-q", "-b", "main"], ["add", "-A"]):
-        subprocess.run(["git", "-C", str(root), *args], check=True)
-    subprocess.run(
-        [
-            "git",
-            "-C",
-            str(root),
-            "-c",
-            "user.name=t",
-            "-c",
-            "user.email=t@example.invalid",
-            "-c",
-            "commit.gpgsign=false",
-            "commit",
-            "-q",
-            "-m",
-            "init",
-        ],
-        check=True,
-    )
+    git(root, "init", "-q", "-b", "main")
+    git(root, "add", "-A")
+    git(root, "-c", "commit.gpgsign=false", "commit", "-q", "-m", "init")
     return root
 
 
@@ -178,9 +176,7 @@ def test_the_command_judges_a_report_on_this_checkout(
     from devloop.council import main
 
     root = _repo(tmp_path)
-    head = subprocess.run(
-        ["git", "-C", str(root), "rev-parse", "HEAD"], capture_output=True, text=True, check=True
-    ).stdout.strip()
+    head = git(root, "rev-parse", "HEAD").strip()
     report = tmp_path / "review-pr12.md"
     report.write_text(_text(head=f'"{head}"', reviewers='["core"]'), encoding="utf-8")
     argv = ["report", "--root", str(root), "--report", str(report), "--paths", "src/app.py"]

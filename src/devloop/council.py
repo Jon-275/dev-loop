@@ -299,7 +299,7 @@ def _report(root: Path, args: argparse.Namespace, chosen: Plan, required: Sequen
     except (ReportError, OSError, UnicodeDecodeError, subprocess.CalledProcessError) as error:
         print(f"devloop council report: {error}", file=sys.stderr)
         return 2
-    verdict = judge(report, head, chosen, required)
+    verdict = judge(report, head, chosen, required, args.pr)
     print(f"Council review: {verdict.state}: {verdict.description}")
     return 0 if verdict.state == "success" else 1
 
@@ -327,6 +327,7 @@ def main(argv: Sequence[str]) -> int:
         if action == "report":
             sub.add_argument("--report", type=Path, required=True, help="review-pr<N>.md")
             sub.add_argument("--head", help="the commit to judge (default: HEAD)")
+            sub.add_argument("--pr", type=int, help="the pull request the report must be for")
     args = parser.parse_args(list(argv))
     if args.action == "library":
         for name, card in library().items():

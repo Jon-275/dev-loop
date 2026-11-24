@@ -61,7 +61,9 @@ findings: {"P0": 0, "P1": 0, "P2": 2, "P3": 1}
 ---
 ```
 
-`verdict` is `"safe"` or `"not safe"`; `reviewers` lists every reviewer that ran. A report
+`verdict` is `"safe"` or `"not safe"`, and it is the verdict that counts: keep the prose
+in step with it. `findings` gives a count for every severity, zero included; `reviewers`
+lists every reviewer that ran. A report
 passes only for that exact head, so after a new push run a delta check and write a new
 report. Run `devloop council report --report <file>` to see the verdict. Then each
 finding: location (`file:line`), proof (command and output), impact, expected fix; in
