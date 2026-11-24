@@ -71,6 +71,8 @@ uv sync                          # install
 .venv/bin/ruff check .           # lint, 0 errors
 .venv/bin/ruff format --check .  # format, 0 issues
 .venv/bin/mypy                   # strict, source and tests, 0 errors; no type: ignore
+                                 # (not src/devloop/bench/project/: the benchmark's
+                                 #  fixture is its own project, run by its own tests)
 .venv/bin/python -m pytest       # tests, including the installed-wheel test
 .venv/bin/devloop doctor --check # this repository's own layout has not drifted
 .venv/bin/mkdocs build --strict    # the docs site, 0 warnings
