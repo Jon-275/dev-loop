@@ -87,7 +87,7 @@ POSIX paths from the project root, and `*` also crosses `/`.
 |---|---|---|
 | `roles_dir` | `"devloop/council"` | The folder of role cards. |
 | `max_reviewers` | `{ 1 = 5, 2 = 2 }` | The most council reviewers per tier; `devloop council check` fails a council over it. |
-| `require_status` | `[1]` | The tiers whose pull requests must have a council review. Nothing posts a `Council review` status yet, so no workflow enforces it. |
+| `require_status` | `[1]` | The tiers whose pull requests must have a council review. `devloop council report` judges a report against it and `council.yml` posts the `Council review` status, which branch protection can require. |
 | `declined` | `[]` | Library packs the owner chose not to add, so `devloop doctor` does not warn about their signals. |
 
 ## [changelog]

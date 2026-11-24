@@ -199,3 +199,16 @@ def test_metrics_are_read_only_and_fail_when_devloop_fails() -> None:
     assert sorted(_on(weekly)) == ["schedule", "workflow_dispatch"]
     assert weekly["jobs"]["metrics"]["uses"] == "./.github/workflows/metrics.yml"
     assert weekly["jobs"]["metrics"]["permissions"] == reads
+
+
+def test_the_council_status_runs_the_default_branch_s_code_with_no_secrets() -> None:
+    """council.yml posts one status from the default branch's checkout and holds no key."""
+    job = _load("council.yml")["jobs"]["council"]
+    assert job["permissions"] == {"contents": "read", "pull-requests": "read", "statuses": "write"}
+    assert "secrets" not in str(job)
+    steps = job["steps"]
+    assert steps[0]["with"]["ref"] == "${{ github.event.repository.default_branch }}"
+    assert steps[0]["with"]["persist-credentials"] is False
+    post = steps[-1]["run"]
+    assert "devloop council report --post" in post
+    assert '[ "$code" -le 1 ] || exit "$code"' in post
