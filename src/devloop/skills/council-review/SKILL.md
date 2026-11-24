@@ -65,7 +65,8 @@ findings: {"P0": 0, "P1": 0, "P2": 2, "P3": 1}
 in step with it. `findings` gives a count for every severity, zero included; `reviewers`
 lists every reviewer that ran. A report
 passes only for that exact head, so after a new push run a delta check and write a new
-report. Run `devloop council report --report <file>` to see the verdict. Then each
+report. Run `devloop council report --report <file>` to see the verdict, and add
+`--post --pr <N>` to post it as the `Council review` status. Then each
 finding: location (`file:line`), proof (command and output), impact, expected fix; in
 severity order. Then what was checked and held, so the next delta check knows what to
 re-run. Write the full notes to `review-pr<number>.md` in the notes folder, where

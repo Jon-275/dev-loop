@@ -33,6 +33,8 @@ KEYS = ("pr", "head", "tier", "reviewers", "verdict", "findings")
 SEVERITIES = ("P0", "P1", "P2", "P3")
 VERDICTS = ("safe", "not safe")
 _SHA = re.compile(r"^[0-9a-f]{40}$")
+#: How a success that needed no council ends: CI's own pass, never a council's verdict.
+NOT_REQUIRED = "council review not required"
 #: GitHub keeps at most this many characters of a status description.
 DESCRIPTION_LIMIT = 140
 
@@ -136,7 +138,7 @@ def judge(
     pending, since one pull request's review never stands for another's.
     """
     if plan.tier not in required:
-        return Verdict("success", f"tier {plan.tier}: council review not required")
+        return Verdict("success", f"tier {plan.tier}: {NOT_REQUIRED}")
     if report is None:
         return Verdict("pending", f"no council report for {head[:7]} (tier {plan.tier})")
     if pr is not None and report.pr != pr:
