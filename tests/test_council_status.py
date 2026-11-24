@@ -203,3 +203,17 @@ def test_a_renamed_file_is_tiered_by_where_it_came_from_too() -> None:
     """Moving tier-1 code out of a tier-1 path keeps the change tier 1."""
     fake = Fake(["docs/payments.md"], renamed={"docs/payments.md": "src/payments.py"})
     assert _publish(fake, None) == "pending"
+
+
+def test_renames_count_once_against_github_s_file_limit(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A PR of renames under the limit is judged; one at the limit is not."""
+    from devloop import council_status
+
+    monkeypatch.setattr(council_status, "MAX_FILES", 4)
+    moved = {f"docs/{n}.md": f"src/{n}.py" for n in range(3)}
+    assert _publish(Fake(list(moved), renamed=moved), None) == "pending"
+    full = {f"docs/{n}.md": f"src/{n}.py" for n in range(4)}
+    with pytest.raises(fb.FeedbackError, match="lists 4 files"):
+        _publish(Fake(list(full), renamed=full), None)

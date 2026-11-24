@@ -67,18 +67,20 @@ class Api:
         """Return every file the pull request changes, over every page."""
         url: str | None = f"{GITHUB_API}/repos/{self.repo}/pulls/{number}/files?per_page=100"
         found: list[str] = []
+        listed = 0  # GitHub's limit counts its entries, not the paths a rename adds
         while url:
             reply = self._get(url)
             if not isinstance(reply.data, list):
                 raise fb.FeedbackError("GitHub's list of the pull request's files is not a list")
+            listed += len(reply.data)
             for item in reply.data:
                 # A rename counts where it came from too, so moving code never lowers a tier.
                 found.append(str(item["filename"]))
                 if item.get("previous_filename"):
                     found.append(str(item["previous_filename"]))
             url = reply.next_url
-        if len(found) >= MAX_FILES:
-            raise fb.FeedbackError(f"the pull request lists {len(found)} files, GitHub's limit")
+        if listed >= MAX_FILES:
+            raise fb.FeedbackError(f"the pull request lists {listed} files, GitHub's limit")
         return found
 
     def current(self, sha: str) -> Verdict | None:

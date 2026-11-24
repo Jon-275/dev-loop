@@ -187,3 +187,22 @@ def test_the_command_judges_a_report_on_this_checkout(
     assert "pending" in capsys.readouterr().out
     report.write_text("not a report\n", encoding="utf-8")
     assert main(argv) == 2
+
+
+def test_head_judges_that_commit_s_change_not_the_checkout_s(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """With --head, the changed files and the head are that commit's, short refs included."""
+    from devloop.council import main
+
+    root = _repo(tmp_path)
+    git(root, "checkout", "-q", "-b", "feature")
+    (root / "src" / "app.py").write_text("x = 2\n", encoding="utf-8")
+    git(root, "-c", "commit.gpgsign=false", "commit", "-q", "-am", "tier-1 change")
+    tier1 = git(root, "rev-parse", "HEAD").strip()
+    git(root, "checkout", "-q", "main")
+    report = tmp_path / "review-pr12.md"
+    report.write_text(_text(head=f'"{tier1}"', tier="2", reviewers='["core"]'), encoding="utf-8")
+    argv = ["report", "--root", str(root), "--report", str(report), "--base", "main"]
+    assert main([*argv, "--head", tier1[:10]]) == 1
+    assert "change is tier 1" in capsys.readouterr().out
