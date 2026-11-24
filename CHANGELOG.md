@@ -12,6 +12,15 @@
 
 ### Security
 
+## 0.5.2 - 2026-11-23
+
+### Fixed
+
+- **The weekly metrics can read commit statuses.** `metrics.yml` asks for
+  `statuses: read`: `devloop metrics` reads each commit's review statuses, and without that
+  permission GitHub refused the whole query (`FORBIDDEN`), so the job failed on its first
+  scheduled run. Callers grant `statuses: read` too.
+
 ## 0.5.1 - 2026-11-23
 
 ### Added
