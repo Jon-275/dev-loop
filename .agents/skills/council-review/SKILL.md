@@ -46,7 +46,26 @@ A real problem outside the PR's concern is reported as out of scope, with the re
 
 ## Report
 
-Start with the verdict, **SAFE** or **not safe**, and the count per severity. Then each
+Start the report file with this frontmatter, which `devloop council report` judges for
+the `Council review` status, then the verdict, **SAFE** or **not safe**, and the count per
+severity:
+
+```markdown
+---
+pr: 12
+head: "<the full commit you reviewed: git rev-parse HEAD>"
+tier: 1
+reviewers: ["core", "security"]
+verdict: "safe"
+findings: {"P0": 0, "P1": 0, "P2": 2, "P3": 1}
+---
+```
+
+`verdict` is `"safe"` or `"not safe"`, and it is the verdict that counts: keep the prose
+in step with it. `findings` gives a count for every severity, zero included; `reviewers`
+lists every reviewer that ran. A report
+passes only for that exact head, so after a new push run a delta check and write a new
+report. Run `devloop council report --report <file>` to see the verdict. Then each
 finding: location (`file:line`), proof (command and output), impact, expected fix; in
 severity order. Then what was checked and held, so the next delta check knows what to
 re-run. Write the full notes to `review-pr<number>.md` in the notes folder, where

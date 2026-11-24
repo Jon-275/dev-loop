@@ -284,9 +284,23 @@ def problems(root: Path, config: Config | None = None) -> list[str]:
     return found
 
 
-def _changed(root: Path, base: str) -> list[str]:
-    """Return the files changed on this branch since it left ``base``."""
-    return [p for p in git(root, "diff", "--name-only", "-z", f"{base}...HEAD").split("\0") if p]
+def _changed(root: Path, base: str, head: str = "HEAD") -> list[str]:
+    """Return the files ``head`` changes since its branch left ``base``."""
+    return [p for p in git(root, "diff", "--name-only", "-z", f"{base}...{head}").split("\0") if p]
+
+
+def _report(args: argparse.Namespace, head: str, chosen: Plan, required: Sequence[int]) -> int:
+    """Judge ``args.report`` for ``head``: 0 success, 1 failure or pending, 2 unreadable."""
+    from devloop.council_report import ReportError, judge, parse_report
+
+    try:
+        report = parse_report(args.report.read_text(encoding="utf-8"))
+    except (ReportError, OSError, UnicodeDecodeError) as error:
+        print(f"devloop council report: {error}", file=sys.stderr)
+        return 2
+    verdict = judge(report, head, chosen, required, args.pr)
+    print(f"Council review: {verdict.state}: {verdict.description}")
+    return 0 if verdict.state == "success" else 1
 
 
 def main(argv: Sequence[str]) -> int:
@@ -300,14 +314,19 @@ def main(argv: Sequence[str]) -> int:
         ("plan", "print the roles and reviewers a change summons"),
         ("library", "list the roles devloop ships"),
         ("add", "copy library roles into this project's council"),
+        ("report", "judge a council report for this change: the Council review verdict"),
     ):
         sub = actions.add_parser(action, help=text)
         sub.add_argument("--root", type=Path, default=Path.cwd(), help="project root")
-        if action == "plan":
+        if action in ("plan", "report"):
             sub.add_argument("--base", default="origin/main", help="the branch's base")
             sub.add_argument("--paths", nargs="*", help="the changed files (default: git)")
         if action == "add":
             sub.add_argument("roles", nargs="+", help="library role names")
+        if action == "report":
+            sub.add_argument("--report", type=Path, required=True, help="review-pr<N>.md")
+            sub.add_argument("--head", help="the commit to judge (default: HEAD)")
+            sub.add_argument("--pr", type=int, help="the pull request the report must be for")
     args = parser.parse_args(list(argv))
     if args.action == "library":
         for name, card in library().items():
@@ -328,7 +347,10 @@ def main(argv: Sequence[str]) -> int:
             return 1 if found else 0
         label = config.council.roles_dir
         cards = load_cards(root / label, label)
-        paths = args.paths if args.paths is not None else _changed(root, args.base)
+        head = "HEAD"
+        if args.action == "report":  # the commit judged, resolved to the report's full form
+            head = git(root, "rev-parse", "--verify", f"{args.head or 'HEAD'}^{{commit}}").strip()
+        paths = args.paths if args.paths is not None else _changed(root, args.base, head)
     except (
         ConfigError,
         CouncilError,
@@ -339,6 +361,8 @@ def main(argv: Sequence[str]) -> int:
         print(f"devloop council: {error}", file=sys.stderr)
         return 2
     chosen = plan(cards, paths, pr_tier(paths, config.tiers))
+    if args.action == "report":
+        return _report(args, head, chosen, config.council.require_status)
     budget = config.council.max_reviewers.get(chosen.tier)
     print(
         f"Tier {chosen.tier}: {len(chosen.reviewers)} reviewer(s), "
