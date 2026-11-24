@@ -10,3 +10,6 @@ build/
 .coverage
 # hand-off notes per branch, never committed (AGENTS.md, coordination)
 .devloop/notes/
+
+# mkdocs build output
+site/

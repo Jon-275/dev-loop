@@ -1,0 +1,3 @@
+__pycache__/
+.devloop/notes/
+.claude/settings.local.json

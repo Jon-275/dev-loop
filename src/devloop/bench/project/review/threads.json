@@ -1,0 +1,4 @@
+[
+  {"id": "T1", "path": "ledger/records.py", "severity": "P1", "body": "load() raises KeyError on records written by the version 0 importer, which omits `description` (see data/v0-records.json). Read a missing description as an empty string."},
+  {"id": "T2", "path": "ledger/core.py", "severity": "P2", "body": "total() should round each amount to whole dollars before summing, so reports show round figures."}
+]

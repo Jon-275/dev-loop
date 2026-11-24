@@ -54,4 +54,6 @@ ignore = ["D203", "D213"]
 python_version = "3.12"
 strict = true
 files = ["src", "tests"]
+# The benchmark fixture is a separate project, tested by its own suite at run time.
+exclude = ["^src/devloop/bench/project/"]
 mypy_path = ["tests"]

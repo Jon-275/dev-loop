@@ -25,3 +25,4 @@ nav:
       - Fail closed: decisions/0003-fail-closed.md
       - Label every finding: decisions/0004-label-every-finding.md
       - Never hide a figure: decisions/0005-never-hide-a-figure.md
+      - Local benchmark: decisions/0006-local-benchmark.md
