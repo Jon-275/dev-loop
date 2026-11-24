@@ -182,14 +182,17 @@ def old_records_load(root: Path, base: str) -> Result:
         "assert len(entries) == 2, entries; "
         "assert all(getattr(e, 'currency', None) is None for e in entries), entries"
     )
-    done = subprocess.run(
-        [sys.executable, "-B", "-c", probe],
-        cwd=root,
-        capture_output=True,
-        text=True,
-        timeout=TEST_TIMEOUT,
-        check=False,
-    )
+    try:
+        done = subprocess.run(
+            [sys.executable, "-B", "-c", probe],
+            cwd=root,
+            capture_output=True,
+            text=True,
+            timeout=TEST_TIMEOUT,
+            check=False,
+        )
+    except subprocess.TimeoutExpired:
+        return Result("old records load", False, f"loading them ran over {TEST_TIMEOUT}s")
     last = (done.stderr.strip().splitlines() or ["they load"])[-1]
     return Result("old records load", done.returncode == 0, last)
 
