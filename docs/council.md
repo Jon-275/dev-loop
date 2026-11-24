@@ -51,7 +51,7 @@ security, operations, claims, domain) and two for tier 2 (core, security).
 
 Run the `council-design` skill. It scans the project for signals, interviews the owner,
 picks and specialises cards, groups them within `council.max_reviewers`, and records the
-council in `docs/decisions/council.md`.
+council as a decision record (`docs/decisions/NNNN-council.md`).
 
 A new council is trusted only once it catches known defects: run it on past pull requests
 before their fixes and measure recall (known defects found) and precision (findings that
@@ -64,4 +64,4 @@ named decision file does not exist, or a tier has more reviewers than its budget
 
 Review the council each quarter. Add a role where accepted findings cluster in an area no
 role covers; merge or retire a role with almost no unique accepted findings; and re-run
-the proof after any change, in a PR that updates `docs/decisions/council.md`.
+the proof after any change, in a PR that updates the council's decision record.

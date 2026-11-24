@@ -1,13 +1,14 @@
 """Tests for ``devloop sync``: one source rendered into every tool's location."""
 
 import json
+import subprocess
 from dataclasses import replace
 from pathlib import Path
 
 import pytest
 
 from devloop.config import PR, Agents, Config, Skills
-from devloop.sync import MANIFEST, SyncError, apply, plan
+from devloop.sync import IGNORE, MANIFEST, SyncError, apply, plan
 
 CFG = Config.default(version="0.1")
 TARGETS = (".claude/skills", ".agents/skills", ".github/skills")
@@ -36,6 +37,22 @@ def test_sync_on_an_empty_project_writes_every_tool_layout(tmp_path: Path) -> No
         assert (tmp_path / target / "devloop-setup" / "SKILL.md").is_file()
     assert (tmp_path / MANIFEST).is_file()
     assert plan(tmp_path, CFG) == []
+
+
+def test_agents_hand_off_notes_are_never_committed(tmp_path: Path) -> None:
+    """AGENTS.md says notes go in .devloop/notes/ and are never committed; git agrees."""
+    subprocess.run(["git", "init", "-q", str(tmp_path)], check=True)
+    apply(tmp_path, CFG)
+    assert (tmp_path / IGNORE).read_text(encoding="utf-8") == "notes/\n"
+    note = tmp_path / ".devloop" / "notes" / "fix-x.md"
+    note.parent.mkdir()
+    note.write_text("hand-off\n", encoding="utf-8")
+    ignored = subprocess.run(
+        ["git", "-C", str(tmp_path), "check-ignore", "-q", str(note)], check=False
+    )
+    assert ignored.returncode == 0
+    (tmp_path / IGNORE).unlink()
+    assert [c.path for c in plan(tmp_path, CFG)] == [IGNORE]
 
 
 def test_sync_is_idempotent(tmp_path: Path) -> None:

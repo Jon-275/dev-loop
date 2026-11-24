@@ -17,6 +17,9 @@ from devloop.config import Config
 from devloop.skills import Skill, SkillError, framework_skills, is_junk, load_skills
 
 MANIFEST = ".devloop/manifest.json"
+#: Keeps agents' hand-off notes (``.devloop/notes/``, never committed) out of git, from a
+#: file devloop owns, so the project's own ``.gitignore`` is never edited.
+IGNORE = ".devloop/.gitignore"
 CLAUDE_FILE = "CLAUDE.md"
 CLAUDE_IMPORT = "@AGENTS.md"
 GEMINI_SETTINGS = ".gemini/settings.json"
@@ -181,6 +184,7 @@ def desired(root: Path, config: Config) -> tuple[dict[str, bytes], set[str]]:
     files.update(rendered)
     manifest = {"files": sorted(rendered)}
     files[MANIFEST] = (json.dumps(manifest, indent=2) + "\n").encode()
+    files[IGNORE] = b"notes/\n"
     return files, {p for p in stale if (root / p).is_file()}
 
 
