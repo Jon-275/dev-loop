@@ -3,7 +3,7 @@
 Upgrade in its own pull request:
 
 1. Install the new version: `uv tool install --force git+https://github.com/Jon-275/dev-loop@v<version>`.
-2. Set `framework.version` in `devloop.toml` to its minor version, such as `"0.5"`.
+2. Set `framework.version` in `devloop.toml` to its minor version, such as `"0.6"`.
    `devloop doctor` fails while the two differ.
 3. Point every shared workflow call at the new tag.
 4. Run `devloop sync`. It rewrites the managed blocks of `AGENTS.md`, every rendered skill
