@@ -24,7 +24,14 @@ from dataclasses import dataclass
 
 from devloop.config import Config
 from devloop.council import RoleCard, plan
-from devloop.council_report import Report, ReportError, Verdict, judge, parse_report
+from devloop.council_report import (
+    NOT_REQUIRED,
+    Report,
+    ReportError,
+    Verdict,
+    judge,
+    parse_report,
+)
 from devloop.review import feedback as fb
 from devloop.review.github import GITHUB_API, Http, Reply, http
 from devloop.review.run import pr_tier
@@ -64,17 +71,22 @@ class Api:
             reply = self._get(url)
             if not isinstance(reply.data, list):
                 raise fb.FeedbackError("GitHub's list of the pull request's files is not a list")
-            found += [str(item["filename"]) for item in reply.data]
+            for item in reply.data:
+                # A rename counts where it came from too, so moving code never lowers a tier.
+                found.append(str(item["filename"]))
+                if item.get("previous_filename"):
+                    found.append(str(item["previous_filename"]))
             url = reply.next_url
         if len(found) >= MAX_FILES:
             raise fb.FeedbackError(f"the pull request lists {len(found)} files, GitHub's limit")
         return found
 
-    def current(self, sha: str) -> str | None:
-        """Return the head's newest Council review state, or None."""
+    def current(self, sha: str) -> Verdict | None:
+        """Return the head's newest Council review status, or None."""
         data = self._get(f"{GITHUB_API}/repos/{self.repo}/commits/{sha}/status?per_page=100").data
         statuses = data.get("statuses", []) if isinstance(data, dict) else []
-        return next((s["state"] for s in statuses if s.get("context") == CONTEXT), None)
+        found = next((s for s in statuses if s.get("context") == CONTEXT), None)
+        return Verdict(str(found["state"]), str(found.get("description") or "")) if found else None
 
     def post(self, sha: str, verdict: Verdict, url: str) -> None:
         """Post ``verdict`` as the Council review status on ``sha``."""
@@ -101,8 +113,10 @@ def publish(
 ) -> Verdict:
     """Judge pull request ``number``'s head and post the Council review status on it.
 
-    With no ``report`` (CI), a success or failure already on the head is kept and nothing
-    is posted. Raises FeedbackError when GitHub cannot be read; then nothing is posted.
+    With no ``report`` (CI), a council's success or failure already on the head is kept
+    and nothing is posted; CI's own "not required" success is judged again. A verdict
+    posted while CI runs can be overwritten with pending (never with a pass): post it
+    again. Raises FeedbackError when GitHub cannot be read; then nothing is posted.
     """
     head = api.head(number)
     paths = api.files(number)
@@ -110,8 +124,12 @@ def publish(
     verdict = judge(report, head, chosen, config.council.require_status, pr=number)
     if report is None and verdict.state == "pending":
         standing = api.current(head)
-        if standing in VERDICT_STATES:
-            return Verdict(standing, "kept the council's verdict already on this head")
+        if (
+            standing
+            and standing.state in VERDICT_STATES
+            and NOT_REQUIRED not in standing.description
+        ):
+            return Verdict(standing.state, "kept the council's verdict already on this head")
     api.post(head, verdict, run_url)
     return verdict
 

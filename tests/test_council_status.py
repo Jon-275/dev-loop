@@ -44,10 +44,17 @@ class Fake:
     """A fake GitHub with one pull request (#7); records every status posted."""
 
     def __init__(
-        self, files: list[str], current: str | None = None, fail: str = "", pages: int = 1
+        self,
+        files: list[str],
+        current: str | None = None,
+        fail: str = "",
+        pages: int = 1,
+        said: str = "safe: P0 0, P1 0, P2 0, P3 0",
+        renamed: dict[str, str] | None = None,
     ) -> None:
         """Answer with ``files`` over ``pages`` pages, ``current`` as the head's status."""
         self.files, self.current, self.fail, self.pages = files, current, fail, pages
+        self.said, self.renamed = said, renamed or {}
         self.posted: list[dict[str, Any]] = []
 
     def __call__(self, method: str, url: str, token: str, body: object) -> Reply:
@@ -65,9 +72,17 @@ class Fake:
             page = int(asked.group(1)) if asked else 1
             share = [f for i, f in enumerate(self.files) if i % self.pages == page - 1]
             more = f"https://api.github.com/repos/o/r/pulls/7/files?page={page + 1}"
-            return Reply(200, [{"filename": f} for f in share], more if page < self.pages else None)
+            listed = [
+                {
+                    "filename": f,
+                    **({"previous_filename": self.renamed[f]} if f in self.renamed else {}),
+                }
+                for f in share
+            ]
+            return Reply(200, listed, more if page < self.pages else None)
         if f"/commits/{HEAD}/status" in url:
-            found = [{"context": CONTEXT, "state": self.current}] if self.current else []
+            status = {"context": CONTEXT, "state": self.current, "description": self.said}
+            found = [status] if self.current else []
             return Reply(200, {"statuses": found})
         raise AssertionError(f"unexpected {method} {url}")
 
@@ -174,3 +189,17 @@ def test_a_failed_github_read_fails_the_run_so_it_is_seen(
     monkeypatch.setattr(council_status, "publish", broken)
     argv = ["report", "--root", str(root), "--post", "--pr", "7", "--repo", "o/r"]
     assert main(argv) == 2
+
+
+def test_ci_re_judges_its_own_not_required_pass() -> None:
+    """CI's own "not required" success is not a council verdict, so it is never kept."""
+    said = "tier 2: council review not required"
+    fake = Fake(["src/app.py"], current="success", said=said)
+    assert _publish(fake, None) == "pending"
+    assert fake.posted[0]["state"] == "pending"
+
+
+def test_a_renamed_file_is_tiered_by_where_it_came_from_too() -> None:
+    """Moving tier-1 code out of a tier-1 path keeps the change tier 1."""
+    fake = Fake(["docs/payments.md"], renamed={"docs/payments.md": "src/payments.py"})
+    assert _publish(fake, None) == "pending"

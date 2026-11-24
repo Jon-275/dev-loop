@@ -71,9 +71,11 @@ needs a delta check and a new report. A report that cannot be read is an error (
 `Council review` commit status on the pull request's head, read from GitHub with
 `GITHUB_TOKEN` (or `gh auth token`). Without `--report`, it posts what CI knows: pending
 while the head's tier needs a council, success where none is required, and it never
-overwrites a verdict already posted on that exact head. Exit 0 is success, 1 pending or
-failure, 2 nothing posted (missing settings, an unreadable report, or a failed GitHub
-read).
+overwrites a council's verdict already posted on that exact head (a verdict posted
+while CI is running can be set back to pending; post it again). Exit 0 is success, 1
+pending or failure (posted, or a verdict kept), 2 the command could not run: missing
+settings, an unreadable report, or a failed GitHub read, and then nothing is posted. A
+renamed file counts at both its old and new path, so moving code never lowers a tier.
 
 Call the shared `council.yml` on every push to a pull request, so a new head never keeps
 an old verdict, then make `Council review` a required check:
