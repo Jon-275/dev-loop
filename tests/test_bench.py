@@ -322,3 +322,21 @@ def test_a_reverted_run_that_times_out_is_not_a_pass(
     results = _results(tmp_path, "fix-bug", fix_with_a_test_that_hangs_without_it)
     assert results["tests pass"]
     assert not results["test fails without the fix"]
+
+
+def test_a_records_loader_that_hangs_fails_its_check_without_crashing(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A hanging load() is a failed check, not an exception that stops the run."""
+    monkeypatch.setattr(checks, "TEST_TIMEOUT", 2)
+    root = tmp_path / "work"
+    base = materialize(root, "claude")
+    _edit(
+        root,
+        "ledger/records.py",
+        "    data = json.loads(",
+        "    while True:\n        pass\n    data = json.loads(",
+    )
+    result = checks.old_records_load(root, base)
+    assert not result.passed
+    assert "2s" in result.detail
