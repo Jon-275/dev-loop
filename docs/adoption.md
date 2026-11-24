@@ -3,7 +3,7 @@
 ## 1. Install and initialise
 
 ```bash
-uv tool install git+https://github.com/Jon-275/dev-loop@v0.7.0
+uv tool install git+https://github.com/Jon-275/dev-loop@v0.7.1
 devloop init
 ```
 

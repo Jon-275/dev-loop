@@ -18,7 +18,7 @@ It works with Claude Code, Codex, Gemini CLI, Antigravity CLI, Cursor and Copilo
 ## Five-minute adoption
 
 ```bash
-uv tool install git+https://github.com/Jon-275/dev-loop@v0.7.0
+uv tool install git+https://github.com/Jon-275/dev-loop@v0.7.1
 cd your-project
 devloop init              # write devloop.toml, AGENTS.md, skills and adapters
 devloop doctor --check    # nothing has drifted; run this in CI too
