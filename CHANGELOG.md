@@ -12,6 +12,34 @@
 
 ### Security
 
+## 0.7.0 - 2026-11-24
+
+### Added
+
+- **Council drift warnings.** `devloop doctor` and `devloop council check` warn, without
+  failing, when a dependency or file calls for a library pack no role card covers (for
+  example `stripe` for payments), or a decision in `docs/decisions/` is enforced by no
+  role. `council.declined` lists the packs the owner chose not to add.
+- **`devloop council report` judges a council report.** The `council-review` skill's
+  report now starts with frontmatter (pull request, head commit, tier, reviewers, verdict,
+  findings per severity). The command judges it for the head: success only for a safe
+  report on that exact commit, at the change's tier or riskier, from every summoned
+  reviewer, with no P0 or P1; anything not judged is pending, never a pass.
+- **The `Council review` status.** `devloop council report --post --pr <N>` posts a
+  report's verdict on the pull request's head, read from GitHub. The shared `council.yml`
+  workflow keeps it current on every push: pending while the head's tier needs a council,
+  success where none is required, never overwriting a verdict already on that head. Tier 1
+  can now require a council review whichever tool ran it.
+
+### Fixed
+
+- **Hand-off notes stay out of git, and the council's record has one name.** `devloop sync`
+  writes `.devloop/.gitignore` (`notes/`), so the notes `AGENTS.md` says are never
+  committed are ignored, without editing the project's own `.gitignore`. The
+  `council-design` skill and the council docs name the council's decision record the way
+  `decision-record` names every record (`docs/decisions/NNNN-council.md`). Both found
+  adopting devloop in a second repository.
+
 ## 0.6.0 - 2026-11-24
 
 ### Added
