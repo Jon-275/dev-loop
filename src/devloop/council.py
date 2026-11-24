@@ -38,7 +38,7 @@ from collections.abc import Iterator, Mapping, Sequence
 from dataclasses import dataclass
 from fnmatch import fnmatchcase
 from importlib import resources
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 
 from devloop.config import CONFIG_FILE, Config, ConfigError, load_config
 from devloop.git import git
@@ -296,7 +296,10 @@ SIGNALS: dict[str, tuple[tuple[str, ...], tuple[str, ...]]] = {
     "frontend-ux": (("react", "vue", "svelte", "@angular/core"), ()),
     "mobile": (("react-native", "expo"), ("*AndroidManifest.xml", "*pubspec.yaml")),
     "infrastructure": ((), ("*.tf", "*Chart.yaml", "*kustomization.yaml")),
-    "data-engineering": (("sqlalchemy", "alembic", "dbt-core"), ("*migrations/*",)),
+    "data-engineering": (
+        ("sqlalchemy", "alembic", "dbt-core"),
+        ("*migrations/*.py", "*migrations/*.sql", "*alembic.ini"),
+    ),
     "crm-revops": (("simple-salesforce", "hubspot-api-client"), ()),
 }
 _NAME = re.compile(r"^\s*(@?[A-Za-z0-9][A-Za-z0-9._/-]*)")
@@ -339,7 +342,9 @@ def _dependencies(root: Path, files: Sequence[str]) -> dict[str, str]:
     found: dict[str, str] = {}
     for rel in files:
         name = rel.rsplit("/", 1)[-1]
-        if rel.count("/") <= 1 and any(fnmatchcase(name, m) for m in _MANIFESTS):
+        folder = rel.rsplit("/", 2)[-2] if "/" in rel else ""
+        requirements = folder == "requirements" and name.endswith(".txt")
+        if requirements or (rel.count("/") <= 1 and any(fnmatchcase(name, m) for m in _MANIFESTS)):
             for dep in _declared(root / rel):
                 found.setdefault(dep, rel)
     return found
@@ -379,7 +384,7 @@ def warnings(root: Path, config: Config | None = None) -> list[str]:
                 f"signal: {evidence} calls for the {pack} pack, which no role card covers; "
                 f"add it (devloop council add {pack}) or list it in council.declined"
             )
-    enforced = {d for card in cards.values() for d in card.decisions}
+    enforced = {PurePosixPath(d).as_posix() for card in cards.values() for d in card.decisions}
     for rel in files:
         if fnmatchcase(rel, "docs/decisions/*.md") and not rel.endswith("/README.md"):
             if rel not in enforced:

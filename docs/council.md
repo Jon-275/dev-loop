@@ -56,7 +56,8 @@ when the council may no longer fit the project:
   `package.json`, at the root or one folder down) or a file that calls for a library
   pack the council has no card for, such as `stripe` for payments or `*.tf` for
   infrastructure. Add the pack (`devloop council add <pack>`) or, if the owner decided
-  against it, list it in `council.declined`.
+  against it, list it in `council.declined`. A pack's card keeps the pack's name
+  (`payments.md`) when it is specialised, so the signal counts as covered.
 - **A decision no role enforces:** a file in `docs/decisions/` that no card names under
   "Decisions enforced". Name it in a card if a review should check it.
 

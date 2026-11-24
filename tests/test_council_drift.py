@@ -62,6 +62,7 @@ def _warnings(root: Path) -> list[str]:
         ),
         ({"infra/main.tf": 'resource "x" "y" {}\n'}, "infrastructure", "infra/main.tf"),
         ({"app/migrations/0001.sql": "create table t ();\n"}, "data-engineering", "migrations"),
+        ({"requirements/base.txt": "stripe\n"}, "payments", "requirements/base.txt"),
     ],
 )
 def test_a_signal_no_role_covers_is_named_with_its_evidence(
@@ -138,3 +139,23 @@ def test_a_project_doctor_cannot_read_gets_no_warnings_only_its_problem(tmp_path
 
     assert warnings(tmp_path) == []
     assert main(["doctor", "--root", str(tmp_path)]) == 0
+
+
+def test_upgrade_notes_under_a_migrations_folder_are_not_a_data_signal(tmp_path: Path) -> None:
+    """Only migration code calls for data engineering, not docs that share the name."""
+    root = _project(tmp_path, {"docs/migrations/v2.md": "# Upgrading\n"})
+    assert _warnings(root) == []
+
+
+def test_a_decision_named_with_a_leading_dot_slash_counts(tmp_path: Path) -> None:
+    """The same path written two ways is one decision."""
+    root = _project(
+        tmp_path,
+        {
+            "docs/decisions/0001-money.md": "# Money\n",
+            "devloop/council/editor.md": CARD.format(
+                name="editor", extra="Decisions enforced: ./docs/decisions/0001-money.md\n"
+            ),
+        },
+    )
+    assert _warnings(root) == []
