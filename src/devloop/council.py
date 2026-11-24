@@ -284,19 +284,18 @@ def problems(root: Path, config: Config | None = None) -> list[str]:
     return found
 
 
-def _changed(root: Path, base: str) -> list[str]:
-    """Return the files changed on this branch since it left ``base``."""
-    return [p for p in git(root, "diff", "--name-only", "-z", f"{base}...HEAD").split("\0") if p]
+def _changed(root: Path, base: str, head: str = "HEAD") -> list[str]:
+    """Return the files ``head`` changes since its branch left ``base``."""
+    return [p for p in git(root, "diff", "--name-only", "-z", f"{base}...{head}").split("\0") if p]
 
 
-def _report(root: Path, args: argparse.Namespace, chosen: Plan, required: Sequence[int]) -> int:
-    """Judge ``args.report`` for the head: 0 success, 1 failure or pending, 2 unreadable."""
+def _report(args: argparse.Namespace, head: str, chosen: Plan, required: Sequence[int]) -> int:
+    """Judge ``args.report`` for ``head``: 0 success, 1 failure or pending, 2 unreadable."""
     from devloop.council_report import ReportError, judge, parse_report
 
     try:
-        head = args.head or git(root, "rev-parse", "HEAD").strip()
         report = parse_report(args.report.read_text(encoding="utf-8"))
-    except (ReportError, OSError, UnicodeDecodeError, subprocess.CalledProcessError) as error:
+    except (ReportError, OSError, UnicodeDecodeError) as error:
         print(f"devloop council report: {error}", file=sys.stderr)
         return 2
     verdict = judge(report, head, chosen, required, args.pr)
@@ -348,7 +347,10 @@ def main(argv: Sequence[str]) -> int:
             return 1 if found else 0
         label = config.council.roles_dir
         cards = load_cards(root / label, label)
-        paths = args.paths if args.paths is not None else _changed(root, args.base)
+        head = "HEAD"
+        if args.action == "report":  # the commit judged, resolved to the report's full form
+            head = git(root, "rev-parse", "--verify", f"{args.head or 'HEAD'}^{{commit}}").strip()
+        paths = args.paths if args.paths is not None else _changed(root, args.base, head)
     except (
         ConfigError,
         CouncilError,
@@ -360,7 +362,7 @@ def main(argv: Sequence[str]) -> int:
         return 2
     chosen = plan(cards, paths, pr_tier(paths, config.tiers))
     if args.action == "report":
-        return _report(root, args, chosen, config.council.require_status)
+        return _report(args, head, chosen, config.council.require_status)
     budget = config.council.max_reviewers.get(chosen.tier)
     print(
         f"Tier {chosen.tier}: {len(chosen.reviewers)} reviewer(s), "
