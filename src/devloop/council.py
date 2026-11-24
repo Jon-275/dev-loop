@@ -325,9 +325,12 @@ def main(argv: Sequence[str]) -> int:
         if action == "add":
             sub.add_argument("roles", nargs="+", help="library role names")
         if action == "report":
-            sub.add_argument("--report", type=Path, required=True, help="review-pr<N>.md")
+            sub.add_argument("--report", type=Path, help="review-pr<N>.md (none: CI's status)")
             sub.add_argument("--head", help="the commit to judge (default: HEAD)")
             sub.add_argument("--pr", type=int, help="the pull request the report must be for")
+            sub.add_argument("--post", action="store_true", help="post it as the PR's status")
+            sub.add_argument("--repo", help="owner/name (default: GITHUB_REPOSITORY or gh)")
+            sub.add_argument("--run-url", default="", help="the status's link")
     args = parser.parse_args(list(argv))
     if args.action == "library":
         for name, card in library().items():
@@ -348,6 +351,13 @@ def main(argv: Sequence[str]) -> int:
             return 1 if found else 0
         label = config.council.roles_dir
         cards = load_cards(root / label, label)
+        if args.action == "report" and args.post:
+            from devloop.council_status import cli
+
+            return cli(args, cards, config)
+        if args.action == "report" and args.report is None:
+            print("devloop council report: --report is needed unless --post", file=sys.stderr)
+            return 2
         paths = args.paths if args.paths is not None else _changed(root, args.base)
     except (
         ConfigError,
