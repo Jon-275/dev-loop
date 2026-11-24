@@ -189,9 +189,13 @@ def test_replies_start_the_labels_check_without_the_model_keys() -> None:
 
 def test_metrics_are_read_only_and_fail_when_devloop_fails() -> None:
     job = _load("metrics.yml")["jobs"]["metrics"]
-    assert job["permissions"] == {"contents": "read", "pull-requests": "read"}
+    # Commit statuses tell finished review runs from failed ones; reading them needs
+    # statuses: read, or GitHub refuses the whole query (FORBIDDEN).
+    reads = {"contents": "read", "pull-requests": "read", "statuses": "read"}
+    assert job["permissions"] == reads
     measure = next(s for s in job["steps"] if s.get("name") == "Measure the window")
     assert measure["run"].startswith("set -o pipefail")
     weekly = _load("metrics-weekly.yml")
     assert sorted(_on(weekly)) == ["schedule", "workflow_dispatch"]
     assert weekly["jobs"]["metrics"]["uses"] == "./.github/workflows/metrics.yml"
+    assert weekly["jobs"]["metrics"]["permissions"] == reads
