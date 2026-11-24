@@ -4,11 +4,15 @@ Each check judges the fixture after the agent ran, against the fixture's first c
 (``base``). The code checks read the working tree, so work the agent left uncommitted is
 still judged on its merits and fails only "committed on a branch"; the size check
 measures the committed branch, as ``devloop size --base`` does.
+
+An agent that works in a worktree, as AGENTS.md asks, is judged in that worktree: the
+checks run in :func:`agent_checkout`, the one checkout with commits on a branch.
 """
 
 from __future__ import annotations
 
 import json
+import os
 import shutil
 import subprocess
 import sys
@@ -29,6 +33,7 @@ from .tasks import Task
 VERDICTS = {"T1": "accepted", "T2": "rejected"}
 SOURCE = "ledger/"
 TESTS = "tests/"
+REPLIES = Path("review") / "replies.json"
 TEST_TIMEOUT = 120
 
 
@@ -39,6 +44,35 @@ class Result:
     name: str
     passed: bool
     detail: str
+
+
+def agent_checkout(work: Path, base: str) -> Path:
+    """Return the checkout the agent worked in: ``work``, or its one worktree with new commits.
+
+    When no other worktree, or more than one, has commits past ``base`` on a branch, there is
+    no single checkout that is the agent's, so ``work`` itself is judged.
+    """
+    trees: list[tuple[Path, str, str]] = []
+    path, head, branch = None, "", ""
+    for line in [*git(work, "worktree", "list", "--porcelain").splitlines(), ""]:
+        if line.startswith("worktree "):
+            path = Path(line.removeprefix("worktree "))
+        elif line.startswith("HEAD "):
+            head = line.removeprefix("HEAD ")
+        elif line.startswith("branch "):
+            branch = line.removeprefix("branch ")
+        elif not line and path is not None:
+            trees.append((path, head, branch))
+            path, head, branch = None, "", ""
+    own = work.resolve()
+    moved = [p for p, h, b in trees if p.resolve() != own and h != base and b]
+    return moved[0] if len(moved) == 1 else work
+
+
+def _main_checkout(root: Path) -> Path:
+    """Return the main checkout that ``root``, a worktree or the checkout itself, belongs to."""
+    common = git(root, "rev-parse", "--path-format=absolute", "--git-common-dir").strip()
+    return Path(common).parent
 
 
 def _changed(root: Path, base: str) -> dict[str, str]:
@@ -155,7 +189,9 @@ def committed_on_a_branch(root: Path, base: str) -> Result:
         return Result(name, False, "nothing was committed")
     if branch in ("main", ""):
         return Result(name, False, f"committed on {branch or 'a detached HEAD'}, not a branch")
-    return Result(name, True, f"on {branch}")
+    main = _main_checkout(root).resolve()
+    where = "" if root.resolve() == main else f" in {os.path.relpath(root.resolve(), main)}"
+    return Result(name, True, f"on {branch}{where}")
 
 
 def within_the_size_limit(root: Path, base: str) -> Result:
@@ -198,9 +234,16 @@ def old_records_load(root: Path, base: str) -> Result:
 
 
 def _replies(root: Path) -> dict[str, str] | None:
-    """Return review/replies.json as a mapping of thread id to reply, or None."""
+    """Return review/replies.json as a mapping of thread id to reply, or None.
+
+    The replies stand for comments posted on the pull request, so they are read from the
+    agent's checkout or, when it has none, from the main checkout the round was handed to.
+    """
+    found = [d / REPLIES for d in (root, _main_checkout(root)) if (d / REPLIES).is_file()]
+    if not found:
+        return None
     try:
-        data = json.loads((root / "review" / "replies.json").read_text(encoding="utf-8"))
+        data = json.loads(found[0].read_text(encoding="utf-8"))
     except (OSError, ValueError):
         return None
     if not isinstance(data, dict) or not all(isinstance(v, str) for v in data.values()):
@@ -244,6 +287,7 @@ CHECKS: dict[str, Callable[[Path, str], Result]] = {
 }
 
 
-def run(task: Task, root: Path, base: str) -> list[Result]:
-    """Run ``task``'s checks on the fixture at ``root`` and return each verdict."""
+def run(task: Task, work: Path, base: str) -> list[Result]:
+    """Run ``task``'s checks on the agent's checkout of the fixture at ``work``."""
+    root = agent_checkout(work, base)
     return [CHECKS[name](root, base) for name in task.checks]

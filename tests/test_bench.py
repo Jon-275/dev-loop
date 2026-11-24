@@ -258,6 +258,64 @@ def fix_with_a_test_that_hangs_without_it(root: Path) -> None:
     _commit(root)
 
 
+def _in_a_worktree(
+    solution: Solution, branch: str = "fix/change", outside: bool = False
+) -> Solution:
+    """Apply ``solution`` in a worktree under .worktrees/, as AGENTS.md asks, not in place.
+
+    With ``outside``, the worktree sits next to the checkout instead of inside it.
+    """
+
+    def apply(root: Path) -> None:
+        tree = root.parent / "beside" if outside else root / ".worktrees" / "change"
+        git(root, "worktree", "add", "-q", str(tree), "-b", branch)
+        solution(tree)
+        git(tree, "add", "-A")
+        git(tree, "commit", "-q", "-m", "fix: change")
+
+    return apply
+
+
+def _fix_and_test(root: Path) -> None:
+    """Make the refunds fix with its test and fragment, uncommitted."""
+    fix_refunds(root)
+    _add_test(root, REFUND_TEST)
+    _fragment(root)
+
+
+def _review_answers(root: Path) -> None:
+    """Make the right review fix with its test and fragment, uncommitted, and no replies."""
+    _edit(root, "ledger/records.py", 'row["description"]', 'row.get("description", "")')
+    _add_test(root, V0_TEST)
+    _fragment(root, "v0-records.fixed.md")
+
+
+REPLIES = {"T1": "accepted: fixed, test added", "T2": "rejected: amounts are exact cents"}
+
+
+def review_with_replies_left_uncommitted(root: Path) -> None:
+    """Commit the fix, then write the replies, which answer the round and are no part of it."""
+    _review_answers(root)
+    _commit(root)
+    _answer(root, REPLIES)
+
+
+def review_in_a_worktree_with_replies_in_the_main_checkout(root: Path) -> None:
+    """Fix in a worktree and write the replies where the round was handed over."""
+    _in_a_worktree(_review_answers)(root)
+    _answer(root, REPLIES)
+
+
+def fix_in_two_worktrees(root: Path) -> None:
+    """Commit in two worktrees: no single checkout is the agent's, so main is judged."""
+    _in_a_worktree(_fix_and_test)(root)
+    tree = root / ".worktrees" / "other"
+    git(root, "worktree", "add", "-q", str(tree), "-b", "fix/other")
+    _fragment(tree, "other.fixed.md")
+    git(tree, "add", "-A")
+    git(tree, "commit", "-q", "-m", "fix: other")
+
+
 def _results(tmp_path: Path, task: str, solution: Solution) -> dict[str, bool]:
     """Materialize the fixture, apply ``solution`` and return each check's verdict."""
     root = tmp_path / "work"
@@ -268,7 +326,15 @@ def _results(tmp_path: Path, task: str, solution: Solution) -> dict[str, bool]:
 
 @pytest.mark.parametrize(
     ("task", "solution"),
-    [("fix-bug", good_fix), ("guarded-field", good_field), ("review-round", good_review)],
+    [
+        ("fix-bug", good_fix),
+        ("guarded-field", good_field),
+        ("review-round", good_review),
+        ("fix-bug", _in_a_worktree(_fix_and_test)),
+        ("fix-bug", _in_a_worktree(_fix_and_test, outside=True)),
+        ("review-round", review_with_replies_left_uncommitted),
+        ("review-round", review_in_a_worktree_with_replies_in_the_main_checkout),
+    ],
 )
 def test_a_conforming_solution_passes_every_check(
     tmp_path: Path, task: str, solution: Solution
@@ -288,6 +354,11 @@ def test_a_conforming_solution_passes_every_check(
         ("fix-bug", fix_on_main, {"committed on a branch"}),
         ("fix-bug", fix_uncommitted, {"committed on a branch"}),
         ("fix-bug", fix_with_type_ignore, {"no type: ignore"}),
+        (
+            "fix-bug",
+            fix_in_two_worktrees,
+            {"test fails without the fix", "changelog fragment", "committed on a branch"},
+        ),
         ("fix-bug", fix_with_broken_test, {"tests pass"}),
         ("guarded-field", field_breaks_old_records, {"old records load", "tests pass"}),
         (
