@@ -152,6 +152,8 @@ Reply to every finding thread in one line that starts with a label word
 it was wrong), then resolve it. Only a labelled reply from a repository owner, member or
 collaborator counts.
 
+- The `Review labels run` job is green whenever the check ran and posted the `Review labels` status,
+  pass or fail; a red job means the check itself could not run and should be re-run.
 - `devloop labels` posts the "Review labels" status: it fails while any finding thread,
   resolved or not, has no labelled reply, and stays pending until every review in
   `labels.wait_for` (statuses) and `labels.wait_for_checks` (check runs) has finished.

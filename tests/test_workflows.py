@@ -179,6 +179,11 @@ def test_the_labels_check_marks_pending_first_and_reports_a_run_that_posted_noth
     assert steps[-1]["if"].startswith("failure() && steps.check.outputs.posted != 'true'")
     job = _load("labels.yml")["jobs"]["labels"]
     assert job["permissions"]["statuses"] == "write" and "secrets" not in str(job)
+    # Runs overlap instead of cancelling each other, so no commit collects cancelled jobs.
+    assert "concurrency" not in job
+    # A bot's per-finding comment events are skipped (its review event runs the check).
+    assert "github.event_name != 'pull_request_review_comment'" in job["if"]
+    assert "github.event.sender.type != 'Bot'" in job["if"]
 
 
 def test_replies_start_the_labels_check_without_the_model_keys() -> None:

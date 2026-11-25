@@ -81,10 +81,20 @@ class Api:
     """A fake GitHub: a PR whose head has ``statuses``, with ``threads``; records posts."""
 
     def __init__(
-        self, threads: list[dict[str, Any]], statuses: list[dict[str, str]], fail: str = ""
+        self,
+        threads: list[dict[str, Any]],
+        statuses: list[dict[str, str]],
+        fail: str = "",
+        then: list[dict[str, Any]] | None = None,
     ) -> None:
-        """Keep what the API answers; ``fail`` names a URL part that answers 403."""
+        """Keep what the API answers; ``fail`` names a URL part that answers 403.
+
+        ``then`` is what the threads become once the first verdict has been posted, as
+        when a reply lands while the check is running.
+        """
         self.threads, self.statuses, self.fail = threads, statuses, fail
+        self.then = then
+        self.fail_after_verdict = ""
         self.posted: list[tuple[str, str]] = []
 
     def __call__(self, method: str, url: str, token: str, body: object) -> Reply:
@@ -94,6 +104,10 @@ class Api:
         if method == "POST" and "/statuses/" in url:
             assert isinstance(body, dict)
             self.posted.append((url.rsplit("/", 1)[1], body["state"]))
+            if self.then is not None and body["state"] != "pending":
+                self.threads, self.then = self.then, None
+            if self.fail_after_verdict and body["state"] != "pending":
+                self.fail, self.fail_after_verdict = self.fail_after_verdict, ""
             return Reply(201, {})
         if url.endswith("/pulls/7"):
             return Reply(200, {"head": {"sha": HEAD}})
@@ -123,9 +137,57 @@ def test_the_head_goes_pending_first_then_gets_the_verdict(tmp_path: Path) -> No
 
 def test_an_unlabelled_thread_fails_and_a_running_review_keeps_it_pending(tmp_path: Path) -> None:
     api = Api([_thread()], STATUS)
-    assert _run(api, tmp_path)[0] == 1 and api.posted[-1] == (HEAD, "failure")
+    code, out = _run(api, tmp_path)
+    assert api.posted[-1] == (HEAD, "failure")
+    # The status carries the verdict; the job succeeded, because it checked and posted.
+    assert code == 0 and "posted=true" in out.read_text()
     waiting = Api([_thread("accepted: fixed")], [])
     assert _run(waiting, tmp_path)[0] == 0 and waiting.posted[-1] == (HEAD, "pending")
+
+
+def test_a_reply_that_lands_while_the_check_runs_is_in_the_final_status(tmp_path: Path) -> None:
+    """Runs overlap: the last status a run leaves is for the threads as they are at its end."""
+    answered = Api([_thread()], STATUS, then=[_thread("accepted: fixed")])
+    assert _run(answered, tmp_path)[0] == 0
+    assert answered.posted == [(HEAD, "pending"), (HEAD, "failure"), (HEAD, "success")]
+    reopened = Api([_thread("accepted: fixed")], STATUS, then=[_thread()])
+    assert _run(reopened, tmp_path)[0] == 0
+    assert reopened.posted == [(HEAD, "pending"), (HEAD, "success"), (HEAD, "failure")]
+
+
+def test_a_second_read_that_fails_never_leaves_the_pass_standing(tmp_path: Path) -> None:
+    """GitHub answering the first read and refusing the second is a failed check, not a pass."""
+    api = Api([_thread("accepted: fixed")], STATUS)
+    api.fail_after_verdict = "graphql"
+    with pytest.raises(fb.FeedbackError):
+        _run(api, tmp_path)
+    assert api.posted == [(HEAD, "pending"), (HEAD, "success"), (HEAD, "failure")]
+    assert "posted=true" in (tmp_path / "out.txt").read_text()
+
+
+def test_a_review_that_finishes_while_the_check_runs_ends_the_wait(tmp_path: Path) -> None:
+    """Pending on the first read and done on the second: the status ends as the verdict."""
+    api = Api([_thread("accepted: fixed")], [])
+    statuses = api.statuses
+
+    def finish(method: str, url: str, token: str, body: object) -> Reply:
+        """Answer as the API does, with the review finished once pending is posted twice."""
+        reply = api(method, url, token, body)
+        if api.posted[-1:] == [(HEAD, "pending")] and len(api.posted) == 2:
+            api.statuses = STATUS
+        return reply
+
+    gh = lb.Github("t", "o/r", send=finish, sleep=lambda _: None)
+    out = tmp_path / "out.txt"
+    assert lb.run(gh, 7, "run", REVIEWERS, PREFIXES, ("Testbot review",), outputs=str(out)) == 0
+    assert statuses == [] and api.posted[-1] == (HEAD, "success")
+
+
+def test_an_unchanged_answer_is_posted_once(tmp_path: Path) -> None:
+    """The second read posts nothing when it agrees with the first."""
+    api = Api([_thread()], STATUS)
+    _run(api, tmp_path)
+    assert api.posted == [(HEAD, "pending"), (HEAD, "failure")]
 
 
 def test_a_failed_read_posts_a_failure_never_a_pass(tmp_path: Path) -> None:
