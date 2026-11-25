@@ -84,9 +84,19 @@ def test_the_hook_adds_the_trailer_from_devloop_agent(
     clone: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     monkeypatch.setenv("PATH", os.environ["PATH"])
+    (clone / "devloop.toml").write_text(
+        '[framework]\nversion = "0.10"\n[agents]\ncommit_attribution = true\n'
+    )
     assert _commit(clone, {"DEVLOOP_AGENT": "codex/gpt-5"}).endswith("Agent: codex/gpt-5")
     assert "Agent:" not in _commit(clone, {"DEVLOOP_AGENT": ""})
     assert "Agent:" not in _commit(clone, {"DEVLOOP_AGENT": "bad value"})  # never blocks
+
+
+def test_installed_hook_requires_explicit_opt_in(clone: Path) -> None:
+    env = {"DEVLOOP_AGENT": "codex/gpt-5"}
+    assert "Agent:" not in _commit(clone, env)
+    (clone / "devloop.toml").write_text('[framework]\nversion = "0.10"\n')
+    assert "Agent:" not in _commit(clone, env)
 
 
 def test_installed_hook_respects_repository_attribution_opt_out(clone: Path) -> None:
@@ -140,8 +150,12 @@ def test_pre_commits_legacy_hook_from_another_tool_is_never_replaced(
 
 
 def test_an_unreadable_message_never_blocks_the_commit(
-    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+    tmp_path: Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
 ) -> None:
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / "devloop.toml").write_text(
+        '[framework]\nversion = "0.10"\n[agents]\ncommit_attribution = true\n'
+    )
     env = {"DEVLOOP_AGENT": "codex/gpt-5"}
     assert agent.main(["--commit-msg", str(tmp_path / "missing")], env) == 0
     assert "no trailer added (FileNotFoundError)" in capsys.readouterr().err

@@ -154,7 +154,7 @@ class Agents:
 
     tools: tuple[str, ...] = ("claude", "codex", "gemini", "antigravity", "cursor", "copilot")
     skills_targets: tuple[str, ...] = (".claude/skills", ".agents/skills", ".github/skills")
-    commit_attribution: bool = True
+    commit_attribution: bool = False
 
 
 #: The framework skills a new project renders: every skill devloop ships.

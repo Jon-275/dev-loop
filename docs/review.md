@@ -170,5 +170,6 @@ collaborator counts.
 window: time to merge, size against `pr.max_lines`, finding threads by reviewer and
 severity, labels and precision, model tokens, and every figure **per authoring tool**. A
 pull request's tool comes from its commits' `Agent: <tool>/<model>` trailers, which the
-`commit-msg` hook adds when `DEVLOOP_AGENT` is set (`devloop agent --install`). Call
+`commit-msg` hook adds when `agents.commit_attribution` is `true` and `DEVLOOP_AGENT`
+is set. Install the optional hook with `devloop agent --install`. Call
 [`metrics.yml`](https://github.com/Jon-275/dev-loop/blob/main/.github/workflows/metrics.yml) from a weekly workflow.

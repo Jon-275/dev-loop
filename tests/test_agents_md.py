@@ -105,6 +105,13 @@ def test_coordination_omits_commit_attribution_when_disabled() -> None:
     assert "normal repository identity" in block
 
 
+def test_coordination_requires_opt_in_for_commit_attribution() -> None:
+    standard = render_template(Config.default(version="0.10"))[0]["coordination"]
+    assert "DEVLOOP_AGENT" not in standard
+    enabled = parse_config('[framework]\nversion = "0.10"\n[agents]\ncommit_attribution = true\n')
+    assert "DEVLOOP_AGENT" in render_template(enabled)[0]["coordination"]
+
+
 def test_rules_block_asks_for_simple_clear_language() -> None:
     block = render_template(Config.default(version="0.1"))[0]["rules"]
     assert "Keep it simple." in block
