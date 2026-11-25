@@ -126,8 +126,9 @@ def waiting_for(
 def write_outputs(path: str, **values: str) -> None:
     """Append ``values`` to ``$GITHUB_OUTPUT`` at ``path``, if there is one.
 
-    The workflow reads ``sha`` (the head marked pending) and ``posted`` (the verdict is
-    posted) to tell a failure verdict, which must stand, from a run that broke first.
+    The workflow reads ``sha`` (the head marked pending) and ``posted`` (a status is
+    posted: the verdict, or the failure of a read that failed) to tell a run that
+    reported from one that broke before it could.
     """
     if path:
         with open(path, "a", encoding="utf-8") as out:
@@ -201,11 +202,20 @@ def run(
     event_sha: str = "",
     outputs: str = "",
 ) -> int:
-    """Check pull request ``number`` and post the status on its head; 1 on a failure.
+    """Check pull request ``number`` and post the status on its head; 0 once it is posted.
+
+    The verdict is the commit status, not the exit code: a run that finds an unlabelled
+    thread posts ``failure`` and still exits 0, because the check did its job. Only a run
+    that could not check (a failed read) is a failed job. So a red job always means "look
+    at this", and the status alone says whether the threads are labelled.
 
     The status goes to pending before the threads are read, so an earlier success never
     stands while this run checks. A failed read posts a failure and re-raises. When the
     pull request itself cannot be read, the failure goes on ``event_sha``, if any.
+
+    Several runs can check one pull request at once (each reply starts one). After posting,
+    the run reads again and posts once more if the answer has changed, so the run that
+    finishes last leaves the status that matches the threads as they then are.
 
     Raises:
         FeedbackError: GitHub could not be read; a failure status was posted.
@@ -221,22 +231,36 @@ def run(
         raise
     gh.post(head, "pending", "Checking the review threads for labels", run_url)
     write_outputs(outputs, sha=head)
-    try:
+
+    def read() -> tuple[str, str, list[str]]:
+        """Return the verdict for the threads and reviews as they are now."""
         waiting = waiting_for(*gh.reviews(head, wait_for_checks), wait_for, wait_for_checks)
-        threads = gh.threads(number)
+        state, description, lines = verdict(
+            findings(gh.threads(number), reviewers, prefixes), prefixes
+        )
+        if waiting and state == "success":
+            state, description = "pending", "; ".join(waiting)
+        return state, description, lines
+
+    try:
+        state, description, lines = read()
+        gh.post(head, state, description, run_url)
+        # Read once more: a reply may have landed, or a review finished, while this run
+        # was posting. Every overlapping run does the same, so the last to finish posts
+        # the answer for the threads as they are at its end.
+        again = read()
+        if again[:2] != (state, description):
+            state, description, lines = again
+            gh.post(head, state, description, run_url)
     except fb.FeedbackError:
         gh.post(head, "failure", unreadable, run_url)
         write_outputs(outputs, posted="true")
         raise
-    state, description, lines = verdict(findings(threads, reviewers, prefixes), prefixes)
-    if waiting and state == "success":
-        state, description = "pending", "; ".join(waiting)
-    gh.post(head, state, description, run_url)
     write_outputs(outputs, posted="true")
     print(f"{CONTEXT}: {state}: {description}")
     for line in lines:
         print(line)
-    return 1 if state == "failure" else 0  # pending is posted as pending, not a job failure
+    return 0
 
 
 def main(root: Path, env: Mapping[str, str]) -> int:

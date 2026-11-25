@@ -16,6 +16,9 @@
 #
 # and as a job that `needs` the review jobs, so their threads are read once posted.
 #
+# The verdict is the commit status. This job succeeds whenever it posted one, pass or
+# fail, and is red only when it could not check, so a red job always needs a look.
+#
 # The head is marked pending before anything can fail, and a run that fails before
 # devloop posts its verdict posts a failure, so an earlier success never outlives a run
 # that could not check. devloop and devloop.toml come from the default branch's
@@ -42,6 +45,12 @@ permissions:
 jobs:
   labels:
     name: Review labels run
+    # A bot's review arrives as one review event and one comment event per finding. The
+    # review event starts the check; a run for each of its comments would be the same
+    # check many times over. A person's reply is one comment event and always runs.
+    if: >-
+      github.event_name != 'pull_request_review_comment'
+      || github.event.sender.type != 'Bot'
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     permissions:
@@ -49,9 +58,11 @@ jobs:
       contents: read
       pull-requests: read
       statuses: write
-    concurrency:
-      group: devloop-labels-${{ github.event.pull_request.number || inputs.pr }}
-      cancel-in-progress: true
+    # No concurrency group: every reply and review starts a run, and cancelling the older
+    # ones left a row of cancelled jobs on each commit. Runs may overlap instead; each
+    # reads the threads last and reads again after posting (see `devloop labels`). A run
+    # that breaks can still post "could not run" after a newer run's verdict; that is a
+    # failure with a red job beside it, never a pass that should not stand.
     env:
       GITHUB_TOKEN: ${{ github.token }}
       GH_TOKEN: ${{ github.token }}
@@ -97,9 +108,9 @@ jobs:
         run: devloop labels
 
       - name: Report a run that posted no verdict
-        # devloop writes posted=true once its verdict is posted (a failure verdict fails the
-        # step too, and must stand), and sha, the head it marked. Any other failure, in
-        # setup or in devloop, is reported on that head.
+        # devloop writes posted=true once it has posted a status (its verdict, or the
+        # failure it posts when it cannot read GitHub), and sha, the head it marked. A run
+        # that broke before that, in setup or in devloop, is reported on that head here.
         if: >-
           failure() && steps.check.outputs.posted != 'true'
           && (steps.check.outputs.sha != '' || steps.head.outputs.sha != '')
