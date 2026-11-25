@@ -21,6 +21,17 @@
 # a model or GitHub error, or a reply that is not the expected JSON fails it. It runs on
 # every pull request, so the status always reports; a pull request whose tier routes no
 # review to this reviewer, or that changes no reviewed file type, passes and says why.
+#
+# Outside pull requests (gate: members). A review spends the project's key and sends the
+# pull request's text to the reviewer, so a project can keep both for people it trusts:
+# with `gate: members` the review runs at once only when the author is the owner, a
+# member or a collaborator of the repository (or one of `trusted_bots`). Anyone else's
+# pull request waits, its status pending, until a maintainer adds the approval label;
+# that `labeled` event reviews the head it names, once. A later push is a new head and
+# waits again, so the caller also triggers on `labeled` and removes the label on every
+# push (docs/review.md, "Outside pull requests"). The decision reads only fields GitHub
+# sets (the author's association and login, the event's action and label), never
+# anything in the pull request, and it is made in a job that holds no key.
 name: Model review
 
 on:
@@ -34,6 +45,23 @@ on:
         description: Where to install devloop from (a uv requirement, or . in dev-loop itself)
         required: true
         type: string
+      gate:
+        description: >-
+          Who is reviewed without approval: "" (everyone, the default) or "members"
+          (the owner, members, collaborators and trusted_bots; others wait for the label)
+        required: false
+        type: string
+        default: ""
+      approval_label:
+        description: The label a maintainer adds to have an outside pull request reviewed
+        required: false
+        type: string
+        default: ai-review-approved
+      trusted_bots:
+        description: Logins of bot authors reviewed without the label, separated by spaces
+        required: false
+        type: string
+        default: "dependabot[bot]"
     secrets:
       api_key:
         description: The reviewer's API key
@@ -43,8 +71,82 @@ permissions:
   contents: read
 
 jobs:
+  # Decides whether this event is reviewed. It holds no key and runs nothing from the
+  # pull request; the review job below, the only one with the key, runs only on its say.
+  gate:
+    name: Gate
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions:
+      statuses: write
+    outputs:
+      run: ${{ steps.decide.outputs.run }}
+      reason: ${{ steps.decide.outputs.reason }}
+    steps:
+      - name: Decide whether this event is reviewed
+        id: decide
+        env:
+          GATE: ${{ inputs.gate }}
+          APPROVAL_LABEL: ${{ inputs.approval_label }}
+          TRUSTED_BOTS: ${{ inputs.trusted_bots }}
+          ASSOCIATION: ${{ github.event.pull_request.author_association }}
+          AUTHOR: ${{ github.event.pull_request.user.login }}
+          ACTION: ${{ github.event.action }}
+          LABEL: ${{ github.event.label.name }}
+        # reason is one of: open (no gate), member, trusted-bot, approved (the approval
+        # label was just added), waiting (an outside pull request with no approval for
+        # this head), other-label (some other label was added: nothing to do).
+        run: |
+          set -f  # a bot login holds [ and ], which must not be read as a file pattern
+          run=true
+          reason=open
+          if [ "$GATE" = "members" ]; then
+            if [ "$ACTION" = "labeled" ] && [ "$LABEL" != "$APPROVAL_LABEL" ]; then
+              run=false
+              reason=other-label
+            else
+              case "$ASSOCIATION" in
+                OWNER | MEMBER | COLLABORATOR)
+                  reason=member
+                  ;;
+                *)
+                  reason=waiting
+                  for bot in $TRUSTED_BOTS; do
+                    if [ "$bot" = "$AUTHOR" ]; then reason=trusted-bot; fi
+                  done
+                  if [ "$reason" = "waiting" ] && [ "$ACTION" = "labeled" ]; then
+                    reason=approved
+                  fi
+                  if [ "$reason" = "waiting" ]; then run=false; fi
+                  ;;
+              esac
+            fi
+          elif [ -n "$GATE" ]; then
+            echo "review.yml: unknown gate '$GATE' (use \"\" or \"members\")" >&2
+            exit 1
+          fi
+          echo "run=${run}" >> "$GITHUB_OUTPUT"
+          echo "reason=${reason}" >> "$GITHUB_OUTPUT"
+          echo "gate: run=${run} reason=${reason}"
+
+      - name: Say the review waits for a maintainer
+        if: steps.decide.outputs.reason == 'waiting'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PROVIDER: ${{ inputs.provider }}
+          APPROVAL_LABEL: ${{ inputs.approval_label }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          gh api "repos/${GITHUB_REPOSITORY}/statuses/${HEAD_SHA}" \
+            -f state=pending -f "context=${PROVIDER^} review" \
+            -f "description=Waiting for a maintainer to add the ${APPROVAL_LABEL} label" \
+            -f "target_url=${RUN_URL}"
+
   review:
     name: Review
+    needs: gate
+    if: needs.gate.outputs.run == 'true'
     runs-on: ubuntu-24.04
     # 40 minutes: a split review has room for further parts, each with its retries.
     timeout-minutes: 40
@@ -53,7 +155,10 @@ jobs:
       pull-requests: write
       statuses: write
     concurrency:
-      group: devloop-review-${{ inputs.provider }}-${{ github.event.pull_request.number }}
+      # The gate's answer is part of the group, so an event that is not reviewed
+      # (another label was added, or the pull request waits) is in a group of its own
+      # and can never cancel a review in progress, however the skipped job is queued.
+      group: devloop-review-${{ inputs.provider }}-${{ github.event.pull_request.number }}-${{ needs.gate.outputs.run }}
       cancel-in-progress: true
     steps:
       - name: Mark the review pending on the head commit
