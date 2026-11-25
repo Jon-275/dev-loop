@@ -59,6 +59,51 @@ code never runs while the key is present.
 After a completed review, only the pull request's own changes since then are reviewed,
 and a push that only merges the base branch is not reviewed again.
 
+### Outside pull requests
+
+A review spends the project's key and sends the pull request's text to the reviewer. A
+public project can keep both for people it trusts by passing `gate: members`:
+
+```yaml
+on:
+  pull_request_target:
+    types: [opened, synchronize, reopened, ready_for_review, labeled]
+
+jobs:
+  gemini:
+    uses: Jon-275/dev-loop/.github/workflows/review.yml@<tag>
+    permissions: { contents: read, pull-requests: write, statuses: write }
+    with:
+      provider: gemini
+      devloop: "git+https://github.com/Jon-275/dev-loop@<tag>"
+      gate: members
+    secrets: { api_key: "${{ secrets.GEMINI_API_KEY }}" }
+```
+
+| Author | What happens |
+|---|---|
+| The owner, a member or a collaborator | Reviewed on every push, as without the gate |
+| A login in `trusted_bots` (default `dependabot[bot]`) | The same |
+| Anyone else | The status is pending, "Waiting for a maintainer to add the ai-review-approved label". Adding the label reviews the head it was added to, once |
+
+Three things to know:
+
+- **Approval covers one head.** A push after the label is a new head and waits again. So
+  that a maintainer can approve it, remove the label on every push; a small job on
+  `pull_request_target` `synchronize` with `pull-requests: write` and no checkout does it.
+  Look at the new commits before adding the label again.
+- **Trigger on `labeled`.** Without it the label starts nothing. Adding any other label
+  changes nothing: it is not reviewed again and no status is touched. If the calling
+  workflow cancels older runs of the same pull request, leave such label events out of
+  that group, or adding a label can cancel a review in progress.
+- **Who counts as a member** is GitHub's `author_association` on the pull request. A
+  member of an organisation whose membership is private is not reported as one, and
+  waits like anyone else.
+
+The decision is made in a job that holds no key and reads only what GitHub sets on the
+event. `approval_label` and `trusted_bots` rename the label and the trusted logins. An
+unknown `gate` value fails the run and reviews nothing.
+
 ## Locally
 
 ```bash
