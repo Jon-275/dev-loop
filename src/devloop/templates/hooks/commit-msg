@@ -1,6 +1,6 @@
 #!/bin/sh
 # devloop commit-msg agent trailer
-# Adds "Agent: <tool>/<model>" when DEVLOOP_AGENT is set (devloop agent). It never
+# Adds a trailer only when the project opts in and DEVLOOP_AGENT is set. It never
 # blocks a commit: without devloop, or on any error, the message is left as it is.
 [ -n "$DEVLOOP_AGENT" ] || exit 0
 command -v devloop >/dev/null 2>&1 || exit 0

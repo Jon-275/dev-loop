@@ -48,8 +48,8 @@ until every finding has one.
 threads by reviewer and severity, labels, precision, unique accepted findings and model
 tokens. Nothing is dropped without being named.
 
-With the `Agent:` commit trailer (`devloop agent --install` and `DEVLOOP_AGENT`), every
-figure is also reported per authoring tool. The tools are **aligned** when their figures
+When a repository opts in to the `Agent:` commit trailer, metrics also report figures
+per authoring tool. The tools are **aligned** when their figures
 are alike: the same rules produce similar sizes, review rounds and rejected shares. A tool
 that is an outlier is not following the rules, and the fix is in its instructions or
 adapter, not in a gate.

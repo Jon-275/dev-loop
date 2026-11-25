@@ -1,10 +1,9 @@
 """The ``Agent: <tool>/<model>`` commit trailer: which coding agent wrote a commit.
 
-An agent sets ``DEVLOOP_AGENT`` (for example ``claude-code/opus-5.5`` or ``codex/gpt-5``)
-and git's ``commit-msg`` hook (``devloop agent --install``) adds the trailer to each commit
-it writes. ``devloop metrics`` then reports every figure per authoring tool, so a tool that
-drifts from the rules shows up as an outlier. The hook never blocks a commit: with no
-``DEVLOOP_AGENT``, an invalid one, an existing trailer, or a project opt-out, it changes nothing.
+A project opts in through ``agents.commit_attribution = true``. The installed
+``commit-msg`` hook then adds a trailer for a valid ``DEVLOOP_AGENT`` value, and
+``devloop metrics`` can report figures by authoring tool. The hook preserves any
+existing trailer and never blocks a commit.
 """
 
 from __future__ import annotations
@@ -124,7 +123,7 @@ def main(argv: Sequence[str], env: Mapping[str, str] | None = None) -> int:
     elif agent:
         try:
             config = Path(CONFIG_FILE)
-            if not config.is_file() or load_config(config).agents.commit_attribution:
+            if config.is_file() and load_config(config).agents.commit_attribution:
                 add_trailer(args.commit_msg, agent)
         except (ConfigError, OSError, UnicodeError, subprocess.SubprocessError) as error:
             print(f"devloop agent: no trailer added ({type(error).__name__})", file=sys.stderr)

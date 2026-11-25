@@ -46,9 +46,8 @@ project's own text, which devloop never touches.
   - rebase a PR or merge `main` into it only when GitHub reports a conflict or `main`
     changed code it depends on, since every push re-runs CI and every reviewer.
 - Leave a hand-off note per branch in `.devloop/notes/<branch>.md` (never committed).
-- Set `DEVLOOP_AGENT=<tool>/<model>` (for example `codex/gpt-5`) in the environment you
-  commit from, once per clone run `devloop agent --install`, and every commit then carries
-  an `Agent:` trailer, so the weekly metrics report each tool's figures.
+- Use the normal repository identity for commits.
+  Keep coding-tool attribution out of commit metadata, messages and pull request descriptions.
 <!-- devloop:end coordination -->
 
 ## About this project

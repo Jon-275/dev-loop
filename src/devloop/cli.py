@@ -42,7 +42,7 @@ def _parser() -> argparse.ArgumentParser:
         ("labels", "in CI, check every review finding on a pull request has a labelled reply"),
         ("lessons", "rank the bug classes review found and write the lessons and rules"),
         ("metrics", "measure the review loop over the pull requests merged in a window"),
-        ("agent", "add the Agent: trailer to a commit message, or install its commit-msg hook"),
+        ("agent", "add an opted-in commit trailer or install its commit-msg hook"),
         ("council", "check the council's role cards, or plan which roles review a change"),
         ("bench", "run a coding agent on the conformance benchmark's tasks (local only)"),
     ):

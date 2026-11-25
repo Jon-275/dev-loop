@@ -80,7 +80,7 @@ its check; the lessons page and the reviewers still get the rule.
 |---|---|---|
 | `tools` | every supported tool | The coding agents in use: `claude`, `codex`, `gemini`, `antigravity`, `cursor`, `copilot`. |
 | `skills_targets` | `.claude/skills`, `.agents/skills`, `.github/skills` | Where rendered skills go; together they must serve every tool. |
-| `commit_attribution` | `true` | Set to `false` to remove the attribution instructions from the generated guidance and prevent the installed commit hook from adding a trailer. |
+| `commit_attribution` | `false` | Set to `true` to enable attribution guidance and allow the installed commit hook to add a trailer when `DEVLOOP_AGENT` is set. |
 
 ## [skills]
 

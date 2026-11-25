@@ -12,11 +12,10 @@ devloop init
 for anything this project does differently ([configuration](configuration.md)), add your
 own skills under `devloop/skills/`, then run `devloop sync` and commit the result.
 
-Once per clone, install the git hooks:
+Once per clone, install the branch hook:
 
 ```bash
 devloop pr-open --install   # never push to a branch whose PR already merged
-devloop agent --install     # add the Agent: trailer when DEVLOOP_AGENT is set
 ```
 
 ## 2. Call the shared workflows
@@ -55,12 +54,12 @@ statuses:
 Block force pushes and deletion, and apply the rules to administrators too. A required
 status is what turns a rule into a gate.
 
-## 5. Agents' own identity
+## 5. Optional commit attribution
 
-Agents that open pull requests should do so as a GitHub App rather than as the owner's
-account. Then the owner's approval means something, and metrics can tell agent work from
-human work. Set `DEVLOOP_AGENT=<tool>/<model>` in each agent's environment so every
-commit says which tool wrote it.
+Repositories that want per-tool metrics can set `commit_attribution = true` under
+`[agents]` in `devloop.toml`. Run `devloop sync`, install the hook with
+`devloop agent --install`, and set `DEVLOOP_AGENT=<tool>/<model>` when committing.
+The resulting trailer is visible in the commit message.
 
 ## 6. The council
 
