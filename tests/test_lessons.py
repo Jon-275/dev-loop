@@ -145,3 +145,44 @@ def test_inputs_that_are_not_utf_8_or_not_files_never_crash(tmp_path: Path) -> N
     (tmp_path / "review-pr1.md").mkdir()
     (tmp_path / "review-pr2.md").write_text("### P1-1 A race \u2014 caf\u00e9\n", encoding="utf-8")
     assert ls.note_findings(tmp_path) == [("A race \u2014 caf\u00e9", 2)]
+
+
+def _enforced_seed() -> dict[str, Any]:
+    """Return the seed with its first class marked as enforced by a lint rule."""
+    first = {**SEED["classes"][0], "enforced_by": "ruff BLE001"}
+    return {**SEED, "classes": [first, SEED["classes"][1]]}
+
+
+def test_an_enforced_lesson_leaves_the_prose_rules_but_is_still_named() -> None:
+    out = ls.render(_enforced_seed(), {"records": [_record("a race")]}, "# Agents\n")
+    block = out.agents[out.agents.index(ls.START) : out.agents.index(ls.END)]
+    assert "1. **Races.** Lock it. (seen 1 time)" in block
+    assert "Re-raise." not in block
+    assert (
+        "Enforced by a check, so not repeated here (1): Swallowed errors (`ruff BLE001`)." in block
+    )
+
+
+def test_an_enforced_lesson_does_not_take_a_top_rule_place() -> None:
+    enforced = {**SEED["classes"][0], "enforced_by": "ruff BLE001"}
+    rest = [{**SEED["classes"][1], "id": f"c{n}", "title": f"Class {n}"} for n in range(11)]
+    out = ls.render({"classes": [enforced, *rest]}, {}, "# Agents\n")
+    assert sum(f"**Class {n}.**" in out.agents for n in range(11)) == ls.TOP_RULES
+
+
+def test_the_page_and_the_reviewers_keep_an_enforced_lesson_with_its_check() -> None:
+    out = ls.render(_enforced_seed(), {}, "# Agents\n")
+    assert "**Rule:** Re-raise.\n\n**Enforced by:** `ruff BLE001`" in out.doc
+    assert "Enforced by" not in out.doc.split("## 2. Races")[1]
+    classes = json.loads(out.patterns)["classes"]
+    assert classes[0]["enforced_by"] == "ruff BLE001" and "enforced_by" not in classes[1]
+
+
+def test_without_enforced_lessons_the_rules_block_is_unchanged() -> None:
+    assert "Enforced by" not in ls.render(SEED, {}, "# Agents\n").agents
+
+
+@pytest.mark.parametrize("value", ["", 3, ["ruff"]], ids=["empty", "number", "list"])
+def test_a_malformed_enforced_by_is_a_lessons_error(value: object) -> None:
+    with pytest.raises(ls.LessonsError, match="enforced_by"):
+        ls.seed_classes({"classes": [{**SEED["classes"][0], "enforced_by": value}]})
