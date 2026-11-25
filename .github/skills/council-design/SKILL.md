@@ -49,4 +49,5 @@ card's "Known false positives" from its rejected findings.
 ## When not to use
 
 - Reviewing a change: use `council-review`.
+- Designing a change with the council's roles: use `council-build`.
 - Never adopt a drafted council without the owner's approval; it is their decision.

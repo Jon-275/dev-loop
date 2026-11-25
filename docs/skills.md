@@ -19,6 +19,7 @@ frontmatter, names no agent-specific tool, runs its commands through `devloop`, 
 | `python-package` | scaffold a typed package and prove it from its wheel |
 | `release` | bump the version, build the changelog, tag and publish |
 | `council-design` | draft and prove the project's council from the role library |
+| `council-build` | design a tier-1 or tier-2 change with the council's roles before writing it |
 | `council-review` | review a change as the council, every serious finding proven |
 
 A project's own skills go in `devloop/skills/<name>/SKILL.md` and are rendered the same

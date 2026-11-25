@@ -109,6 +109,18 @@ when the council may no longer fit the project:
 
 A project without role cards gets no warnings.
 
+## Building with the council
+
+The roles also work before the code exists. For a tier-1 or tier-2 change, the
+`council-build` skill writes a short brief, runs `devloop council plan --paths <the
+paths the change will touch>` to see who it summons, and asks each reviewer for a design
+in its own area: what must hold, what the reader sees, the decisions that bind it and
+the tests that would prove it. The author folds those into one design, takes any choice
+that is the owner's to the owner, and only then builds.
+
+A design round is not a verdict. `council-review` still judges the finished change, with
+reviewers that did not see the design discussion.
+
 ## Designing and proving a council
 
 Run the `council-design` skill. It scans the project for signals, interviews the owner,

@@ -21,6 +21,9 @@ project's own text, which devloop never touches.
 - **Never hide a finding or a figure.** Suppressed or excluded items are counted and named.
 - **Stateful changes start with their invariants**: write the states, identities and
   invariants first, then an end-state test, then the code.
+- **Risky changes are designed with the council.** Before writing a tier-1 or tier-2
+  change, the council's roles design it (`council-build`); the council still reviews
+  the result before merge.
 <!-- devloop:end rules -->
 
 <!-- devloop:begin review -->

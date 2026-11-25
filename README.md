@@ -49,7 +49,7 @@ devloop doctor --check    # check nothing has drifted; run this in CI
 - `devloop metrics [--days N]`: the review loop's figures for the pull requests merged in
   a window, per authoring tool. `devloop agent --install` adds the `Agent:` trailer.
 - `devloop council plan|check|library|add`: the council's role cards
-  ([skills](docs/skills.md): `council-design`, `council-review`).
+  ([skills](docs/skills.md): `council-design`, `council-build`, `council-review`).
 
 Full documentation: [concepts](docs/concepts.md), [adoption](docs/adoption.md),
 [configuration](docs/configuration.md) and [skills](docs/skills.md). Build it with
