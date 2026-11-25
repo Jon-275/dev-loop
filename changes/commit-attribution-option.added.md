@@ -1,1 +1,0 @@
-- **Opt-in commit attribution.** The installed hook adds trailers only when the repository explicitly sets `agents.commit_attribution = true` and a valid attribution value is supplied.
