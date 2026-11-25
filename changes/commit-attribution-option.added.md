@@ -1,1 +1,0 @@
-- **Repository control over commit attribution.** Set `agents.commit_attribution` to `false` to turn off the commit trailer in the installed hook and the generated guidance.
