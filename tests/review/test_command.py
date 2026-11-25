@@ -105,6 +105,16 @@ def test_the_policy_and_marker_names_come_from_the_config() -> None:
     assert "greptile-finding" not in names and "openai-finding" not in names
 
 
+def test_only_an_outside_pull_request_gets_the_size_limit() -> None:
+    """The limit applies to an approved outside pull request, never to the project's own."""
+    config = parse_config(TOML + '[review]\nsecret_allow = ["tests/*"]\n')
+    own = command.policy(config)
+    assert own.max_chars is None and own.secret_scan and own.secret_allow == ("tests/*",)
+    assert command.policy(config, outside=True).max_chars == 150_000
+    unlimited = parse_config(TOML + "[review]\noutside_max_chars = 0\n")
+    assert command.policy(unlimited, outside=True).max_chars is None
+
+
 def test_the_cli_runs_the_review_command(branch: Path, capsys: pytest.CaptureFixture[str]) -> None:
     assert (
         main(

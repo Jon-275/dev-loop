@@ -111,6 +111,12 @@ class Review:
     feedback: str = ""
     lessons: str = ""
     reviewers: dict[str, Reviewer] = field(default_factory=dict)
+    #: Refuse to send a diff or a file that holds a likely secret.
+    secret_scan: bool = True
+    #: Globs of files the secret scan skips.
+    secret_allow: tuple[str, ...] = ()
+    #: The most characters an approved outside pull request may send; 0 is no limit.
+    outside_max_chars: int = 150_000
 
 
 @dataclass(frozen=True)
@@ -295,6 +301,9 @@ def parse_config(text: str) -> Config:
             "feedback",
             "lessons",
             "reviewers",
+            "secret_scan",
+            "secret_allow",
+            "outside_max_chars",
         },
     )
     labels = _table(data, "labels", {"prefixes", "wait_for", "wait_for_checks"})
@@ -326,6 +335,12 @@ def parse_config(text: str) -> Config:
             feedback=_optional_path(review, "review.feedback", "feedback"),
             lessons=_optional_path(review, "review.lessons", "lessons"),
             reviewers=_reviewers(_table(review, "reviewers", None)),
+            secret_scan=_bool(review.get("secret_scan", d_rev.secret_scan), "review.secret_scan"),
+            secret_allow=_strs(review, "review.secret_allow", "secret_allow", d_rev.secret_allow),
+            outside_max_chars=_non_negative_int(
+                review.get("outside_max_chars", d_rev.outside_max_chars),
+                "review.outside_max_chars",
+            ),
         ),
         labels=Labels(
             prefixes=_prefixes(labels, d_lab.prefixes),
@@ -379,6 +394,13 @@ def _str(table: Mapping[str, Any], where: str, key: str, default: str) -> str:
     value = table.get(key, default)
     if not isinstance(value, str) or not value:
         raise ConfigError(f"{where} must be a non-empty string")
+    return value
+
+
+def _bool(value: object, where: str) -> bool:
+    """Return ``value`` if it is true or false."""
+    if not isinstance(value, bool):
+        raise ConfigError(f"{where} must be true or false")
     return value
 
 

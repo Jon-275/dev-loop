@@ -220,3 +220,9 @@ def test_the_default_is_unchanged_for_callers_that_set_no_gate(tmp_path: Path, g
         LABEL="",
     )
     assert found["run"] == "true"
+
+
+def test_only_an_approved_outside_pull_request_is_marked_outside() -> None:
+    """The review step is told the pull request is outside exactly when it was approved."""
+    review = next(s for s in _jobs()["review"]["steps"] if s.get("id") == "review")
+    assert review["env"]["DEVLOOP_OUTSIDE"] == "${{ needs.gate.outputs.reason == 'approved' }}"

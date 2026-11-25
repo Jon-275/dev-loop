@@ -32,6 +32,7 @@ from devloop.review.model import (
     Effort,
     Finding,
     IncompleteReview,
+    NotSent,
     Provider,
     ReviewError,
     Settings,
@@ -40,6 +41,7 @@ from devloop.review.model import (
 )
 from devloop.review.parts import review_in_parts
 from devloop.review.prompt import is_high_effort, prompt_path
+from devloop.review.secrets import find_secrets
 from devloop.review.threads import (
     Feedback,
     Suppression,
@@ -63,6 +65,13 @@ class Policy:
     #: The reviewer names routed to each tier; an empty map routes every reviewer.
     routes: Mapping[int, tuple[str, ...]] = field(default_factory=dict)
     tiers: Mapping[int, tuple[str, ...]] = field(default_factory=dict)
+    #: Refuse to send a diff or a file that holds a likely secret.
+    secret_scan: bool = True
+    #: Globs of files that are not scanned (test values that only look like keys).
+    secret_allow: tuple[str, ...] = ()
+    #: The most characters of diff and file contents this run may send, or None for no
+    #: limit. Set for an outside pull request a maintainer approved, to bound its cost.
+    max_chars: int | None = None
 
 
 def pr_tier(paths: Sequence[str], tiers: Mapping[int, tuple[str, ...]]) -> int:
@@ -110,6 +119,8 @@ def run_review(
     reworded title).
 
     Raises:
+        NotSent: a likely secret, or more than an outside pull request may send, is in
+            what would be sent; nothing was sent and the check must fail.
         IncompleteReview: some changed files could not be reviewed; the partial review,
             naming them, was posted, and the check must still fail.
         ReviewError: the review could not be completed; the check must fail.
@@ -151,6 +162,7 @@ def run_review(
     for path in todo.paths:  # a changed file the diff has no section for is still sent
         sections.setdefault(path, "")
     notes = learned.notes + (increment_note(increment) if increment else "")
+    _check_before_sending(provider, policy, sections, contexts)
     review = review_in_parts(
         provider, ask, effort, sections, contexts, skipped, notes, unshown, clock=clock
     )
@@ -213,6 +225,43 @@ def run_review(
         write_status(status)
         return f"{done} {status}."
     return done
+
+
+def _check_before_sending(
+    provider: Provider,
+    policy: Policy,
+    sections: Mapping[str, str],
+    contexts: Mapping[str, str],
+) -> None:
+    """Refuse to send a likely secret, or more than an outside pull request may cost.
+
+    Both checks run on exactly what would be sent (each file's diff section and each
+    attached file's contents) and before the first request, so a refusal sends nothing.
+
+    Raises:
+        NotSent: a likely secret is in what would be sent, or it is over ``max_chars``.
+
+    """
+    if policy.secret_scan:
+        hits = find_secrets(sections, contexts, policy.secret_allow, header_lines=1)
+        if hits:
+            files = len({hit.path for hit in hits})
+            raise NotSent(
+                f"Nothing was sent to {provider.name}: {len(hits)} likely secret(s) in "
+                f"{files} file(s): " + "; ".join(str(hit) for hit in hits) + ". Remove each "
+                "one, and rotate it if it is real. For a test value that only looks like a "
+                "key, add the file to review.secret_allow in devloop.toml.",
+                f"Not sent: {len(hits)} likely secret(s) in {files} file(s); see the run",
+            )
+    if policy.max_chars is not None:
+        size = sum(map(len, sections.values())) + sum(map(len, contexts.values()))
+        if size > policy.max_chars:
+            raise NotSent(
+                f"Nothing was sent to {provider.name}: this outside pull request would send "
+                f"{size} characters, over review.outside_max_chars ({policy.max_chars}). "
+                "Review it by hand, ask for a smaller pull request, or raise the limit.",
+                f"Not sent: {size} characters, over the outside limit of {policy.max_chars}",
+            )
 
 
 #: Why a file is unreviewed when the prompt carried neither its hunks nor its contents.
@@ -287,7 +336,7 @@ def outcome(provider: Provider, review: Callable[[], str]) -> int:
         print(review())
     except ReviewError as error:
         print(annotation(provider, str(error)))
-        if isinstance(error, IncompleteReview):
+        if isinstance(error, IncompleteReview | NotSent):
             write_status(error.status)
         return 1
     return 0

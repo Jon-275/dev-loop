@@ -84,6 +84,12 @@ def test_framework_version_is_required() -> None:
         ('[framework]\nversion = "0.1"\n[tiers]\n2 = ["x"]\n', r"tier 2.*default"),
         ('[framework]\nversion = "0.1"\n[tiers]\none = ["x"]\n', r"tiers.*one"),
         ('[framework]\nversion = "0.1"\n[review]\nblocking_severities = ["P9"]\n', r"P9"),
+        ('[framework]\nversion = "0.1"\n[review]\nsecret_scan = "yes"\n', r"review\.secret_scan"),
+        ('[framework]\nversion = "0.1"\n[review]\nsecret_allow = "x"\n', r"review\.secret_allow"),
+        (
+            '[framework]\nversion = "0.1"\n[review]\noutside_max_chars = -1\n',
+            r"review\.outside_max_chars",
+        ),
         ('[framework]\nversion = "0.1"\n[agents]\ntools = ["vim"]\n', r"unknown tool.*vim"),
         ('[framework]\nversion = "0.1"\n[agents]\ntools = ["claude", "claude"]\n', r"twice"),
         ('[framework]\nversion = "0.1"\n[agents]\nskills_targets = []\n', r"skills_targets"),
@@ -202,3 +208,16 @@ def test_review_defaults_review_code_and_block_on_p1_and_p2() -> None:
 def test_invalid_review_settings_are_rejected(body: str, message: str) -> None:
     with pytest.raises(ConfigError, match=message):
         parse_config(f'[framework]\nversion = "0.3"\n[review]\n{body}\n')
+
+
+def test_the_secret_scan_and_the_outside_limit_are_read_and_default_on() -> None:
+    """The scan is on and outside pull requests are limited unless a project says otherwise."""
+    defaults = parse_config('[framework]\nversion = "0.1"\n').review
+    assert defaults.secret_scan is True and defaults.secret_allow == ()
+    assert defaults.outside_max_chars == 150_000
+    review = parse_config(
+        '[framework]\nversion = "0.1"\n[review]\nsecret_scan = false\n'
+        'secret_allow = ["tests/fixtures/*"]\noutside_max_chars = 0\n'
+    ).review
+    assert review.secret_scan is False and review.secret_allow == ("tests/fixtures/*",)
+    assert review.outside_max_chars == 0
