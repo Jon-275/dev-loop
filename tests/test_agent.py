@@ -89,6 +89,15 @@ def test_the_hook_adds_the_trailer_from_devloop_agent(
     assert "Agent:" not in _commit(clone, {"DEVLOOP_AGENT": "bad value"})  # never blocks
 
 
+def test_installed_hook_respects_repository_attribution_opt_out(clone: Path) -> None:
+    env = {"DEVLOOP_AGENT": "codex/gpt-5"}
+    config = clone / "devloop.toml"
+    config.write_text('[framework]\nversion = "0.10"\n[agents]\ncommit_attribution = false\n')
+    assert "Agent:" not in _commit(clone, env)
+    config.write_text('[framework]\nversion = "0.10"\n[agents]\ncommit_attribution = true\n')
+    assert _commit(clone, env).endswith("Agent: codex/gpt-5")
+
+
 def test_another_tools_hook_is_never_replaced(
     tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:

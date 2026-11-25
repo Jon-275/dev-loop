@@ -9,7 +9,7 @@ from devloop.agents_md import (
     parse_blocks,
     render_template,
 )
-from devloop.config import Config
+from devloop.config import Config, parse_config
 
 DOC = """# AGENTS.md
 
@@ -94,6 +94,15 @@ def test_coordination_block_says_how_to_merge_a_stack() -> None:
     assert "merge commit" in block
     assert "gh pr edit <next> --base main" in block
     assert "only when GitHub reports a conflict" in block
+
+
+def test_coordination_omits_commit_attribution_when_disabled() -> None:
+    config = parse_config('[framework]\nversion = "0.10"\n[agents]\ncommit_attribution = false\n')
+    block = render_template(config)[0]["coordination"]
+    assert "DEVLOOP_AGENT" not in block
+    assert "Agent:" not in block
+    assert "merge commit" in block
+    assert "normal repository identity" in block
 
 
 def test_rules_block_asks_for_simple_clear_language() -> None:

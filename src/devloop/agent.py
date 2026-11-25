@@ -4,7 +4,7 @@ An agent sets ``DEVLOOP_AGENT`` (for example ``claude-code/opus-5.5`` or ``codex
 and git's ``commit-msg`` hook (``devloop agent --install``) adds the trailer to each commit
 it writes. ``devloop metrics`` then reports every figure per authoring tool, so a tool that
 drifts from the rules shows up as an outlier. The hook never blocks a commit: with no
-``DEVLOOP_AGENT``, an invalid one, or a trailer already there, it changes nothing.
+``DEVLOOP_AGENT``, an invalid one, an existing trailer, or a project opt-out, it changes nothing.
 """
 
 from __future__ import annotations
@@ -18,6 +18,7 @@ from collections.abc import Callable, Mapping, Sequence
 from importlib import resources
 from pathlib import Path
 
+from devloop.config import CONFIG_FILE, ConfigError, load_config
 from devloop.pr_open import PRE_COMMIT_MARKER
 
 TRAILER = "Agent"
@@ -122,7 +123,9 @@ def main(argv: Sequence[str], env: Mapping[str, str] | None = None) -> int:
         )
     elif agent:
         try:
-            add_trailer(args.commit_msg, agent)
-        except (OSError, UnicodeError, subprocess.SubprocessError) as error:
+            config = Path(CONFIG_FILE)
+            if not config.is_file() or load_config(config).agents.commit_attribution:
+                add_trailer(args.commit_msg, agent)
+        except (ConfigError, OSError, UnicodeError, subprocess.SubprocessError) as error:
             print(f"devloop agent: no trailer added ({type(error).__name__})", file=sys.stderr)
     return 0  # the hook never blocks a commit
