@@ -154,6 +154,7 @@ class Agents:
 
     tools: tuple[str, ...] = ("claude", "codex", "gemini", "antigravity", "cursor", "copilot")
     skills_targets: tuple[str, ...] = (".claude/skills", ".agents/skills", ".github/skills")
+    commit_attribution: bool = True
 
 
 #: The framework skills a new project renders: every skill devloop ships.
@@ -308,7 +309,7 @@ def parse_config(text: str) -> Config:
     )
     labels = _table(data, "labels", {"prefixes", "wait_for", "wait_for_checks"})
     lessons = _table(data, "lessons", {"seed", "doc", "agents", "repo"})
-    agents = _table(data, "agents", {"tools", "skills_targets"})
+    agents = _table(data, "agents", {"tools", "skills_targets", "commit_attribution"})
     skills = _table(data, "skills", {"include", "project"})
     council = _table(data, "council", {"roles_dir", "max_reviewers", "require_status", "declined"})
     log = _table(data, "changelog", {"dir", "file", "sections", "code"})
@@ -350,7 +351,14 @@ def parse_config(text: str) -> Config:
             ),
         ),
         lessons=_lessons(lessons),
-        agents=Agents(tools=_tools(agents, d_ag.tools), skills_targets=_targets(agents, d_ag)),
+        agents=Agents(
+            tools=_tools(agents, d_ag.tools),
+            skills_targets=_targets(agents, d_ag),
+            commit_attribution=_bool(
+                agents.get("commit_attribution", d_ag.commit_attribution),
+                "agents.commit_attribution",
+            ),
+        ),
         skills=Skills(
             include=_strs(skills, "skills.include", "include", d_sk.include),
             project=_rel_path(

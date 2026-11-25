@@ -17,6 +17,15 @@ from devloop.config import Config
 AGENTS_FILE = "AGENTS.md"
 REQUIRED_SECTIONS = ("## About this project", "## Commands")
 _MARKER = re.compile(r"^<!-- devloop:(begin|end) ([a-z][a-z0-9-]*) -->$")
+_ATTRIBUTION_RULE = (
+    "- Set `DEVLOOP_AGENT=<tool>/<model>` (for example `codex/gpt-5`) in the environment you\n"
+    "  commit from, once per clone run `devloop agent --install`, and every commit then carries\n"
+    "  an `Agent:` trailer, so the weekly metrics report each tool's figures."
+)
+_REPOSITORY_IDENTITY_RULE = (
+    "- Use the normal repository identity for commits.\n"
+    "  Keep coding-tool attribution out of commit metadata, messages and pull request descriptions."
+)
 
 
 class BlockError(ValueError):
@@ -119,7 +128,12 @@ def render_template(config: Config) -> tuple[dict[str, str], str]:
     raw = resources.files("devloop").joinpath("templates", AGENTS_FILE).read_text("utf-8")
     labels = " or ".join(f"`{p}:`" for p in config.labels.prefixes)
     doc = Template(raw).substitute(
-        max_lines=config.pr.max_lines, large_label=config.pr.large_label, labels=labels
+        max_lines=config.pr.max_lines,
+        large_label=config.pr.large_label,
+        labels=labels,
+        commit_attribution=(
+            _ATTRIBUTION_RULE if config.agents.commit_attribution else _REPOSITORY_IDENTITY_RULE
+        ),
     )
     return parse_blocks(doc), doc
 
