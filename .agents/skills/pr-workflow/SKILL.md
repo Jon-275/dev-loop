@@ -13,7 +13,9 @@ gets a change through them first time.
 1. **Start clean.** Fetch, then create a worktree on a new branch from the default branch:
    `git worktree add -b <type>/<slug> .worktrees/<slug> origin/main`. Never commit to the
    default branch, and never switch the branch of a checkout another agent is using.
-2. **Read first.** Run the `lessons-intake` skill for the area you are changing.
+2. **Read first.** Run the `lessons-intake` skill for the area you are changing. For a
+   tier-1 or tier-2 change, design it with the council before writing it
+   (`council-build`).
 3. **Tests first.** Write the test that fails without the change, watch it fail, then make
    it pass. A stateful change follows the `stateful-change` skill.
 4. **Run the gates** listed under "Commands" in `AGENTS.md` until all pass, and

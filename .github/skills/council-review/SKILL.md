@@ -77,4 +77,5 @@ findings `accepted:` or `rejected:` like any review thread.
 
 - Writing the fix: the council does not edit the code under review.
 - A tier-3 change (docs, tests only): no council round.
+- Designing a change before it is written: use `council-build`.
 - Designing or changing the council itself: use `council-design`.

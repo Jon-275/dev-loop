@@ -16,7 +16,7 @@ tools = ["claude", "codex", "gemini", "antigravity", "cursor", "copilot"]
 skills_targets = [".claude/skills", ".agents/skills", ".github/skills"]
 
 [skills]
-include = ["address-review", "council-design", "council-review", "decision-record", "devloop-setup", "lessons-intake", "pr-workflow", "python-package", "release", "review-locally", "split-stack", "stateful-change", "testing-and-ci"]
+include = ["address-review", "council-build", "council-design", "council-review", "decision-record", "devloop-setup", "lessons-intake", "pr-workflow", "python-package", "release", "review-locally", "split-stack", "stateful-change", "testing-and-ci"]
 project = "devloop/skills"
 
 [labels]
