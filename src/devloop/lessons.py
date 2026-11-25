@@ -54,6 +54,9 @@ class LessonClass:
     prs: set[int] = field(default_factory=set)
     seen: int = 0
     sources: set[str] = field(default_factory=set)
+    #: The check that fails on this bug class (a lint rule, a test), or empty when only
+    #: review catches it. An enforced class is named in ``AGENTS.md`` without its prose.
+    enforced_by: str = ""
 
     def matches(self, text: str) -> bool:
         """Whether ``text`` (a finding title) has one of the class's keywords as whole words.
@@ -98,7 +101,8 @@ def seed_classes(seed: Mapping[str, Any]) -> list[LessonClass]:
     """Return the seeded classes; each seeded PR counts once.
 
     Raises:
-        LessonsError: a class lacks a text field, or its keywords or PRs are malformed.
+        LessonsError: a class lacks a text field, or its keywords, PRs or ``enforced_by``
+            are malformed.
 
     """
     source = str(seed.get("source") or "seed")
@@ -122,6 +126,9 @@ def seed_classes(seed: Mapping[str, Any]) -> list[LessonClass]:
             isinstance(n, int) and not isinstance(n, bool) and n > 0 for n in numbers
         ):
             raise LessonsError(f"{where}: prs must be a list of pull request numbers")
+        enforced_by = item.get("enforced_by")
+        if "enforced_by" in item and not (isinstance(enforced_by, str) and enforced_by):
+            raise LessonsError(f"{where}: enforced_by must name the check, or be left out")
         prs = set(numbers)
         classes.append(
             LessonClass(
@@ -134,6 +141,7 @@ def seed_classes(seed: Mapping[str, Any]) -> list[LessonClass]:
                 prs=prs,
                 seen=len(prs),
                 sources={source} if prs else set(),
+                enforced_by=enforced_by or "",
             )
         )
     return classes
@@ -234,6 +242,7 @@ def lessons_doc(
             "",
             f"**Rule:** {lesson.rule}",
             "",
+            *([f"**Enforced by:** `{lesson.enforced_by}`", ""] if lesson.enforced_by else []),
             f"Seen {_times(lesson.seen)} ({', '.join(sorted(lesson.sources))}). "
             f"PRs: {_prs(lesson, repo)}.",
             "",
@@ -272,7 +281,11 @@ def lessons_doc(
 
 
 def agents_section(classes: Sequence[LessonClass], doc: str = "docs/lessons-learned.md") -> str:
-    """Return the generated top-rules section of ``AGENTS.md``, markers included."""
+    """Return the generated top-rules section of ``AGENTS.md``, markers included.
+
+    A class with ``enforced_by`` has a check that fails on it, so its prose is left out and
+    it takes no top-rule place; it is still counted and named, with its check, in one line.
+    """
     lines = [
         START,
         "## Lessons from review (top 10, read before changing code)",
@@ -281,8 +294,13 @@ def agents_section(classes: Sequence[LessonClass], doc: str = "docs/lessons-lear
         f"is [{doc}]({doc}).",
         "",
     ]
-    for number, lesson in enumerate(classes[:TOP_RULES], start=1):
+    prose = [lesson for lesson in classes if not lesson.enforced_by]
+    for number, lesson in enumerate(prose[:TOP_RULES], start=1):
         lines.append(f"{number}. **{lesson.title}.** {lesson.rule} (seen {_times(lesson.seen)})")
+    enforced = [lesson for lesson in classes if lesson.enforced_by]
+    if enforced:
+        named = ", ".join(f"{lesson.title} (`{lesson.enforced_by}`)" for lesson in enforced)
+        lines += ["", f"Enforced by a check, so not repeated here ({len(enforced)}): {named}."]
     lines.append(END)
     return "\n".join(lines)
 
@@ -307,7 +325,14 @@ def reviewer_patterns(classes: Sequence[LessonClass]) -> dict[str, Any]:
     return {
         "version": 1,
         "classes": [
-            {"id": c.id, "title": c.title, "rule": c.rule, "seen": c.seen} for c in classes
+            {
+                "id": c.id,
+                "title": c.title,
+                "rule": c.rule,
+                "seen": c.seen,
+                **({"enforced_by": c.enforced_by} if c.enforced_by else {}),
+            }
+            for c in classes
         ],
     }
 

@@ -67,6 +67,10 @@ POSIX paths from the project root, and `*` also crosses `/`.
 | `agents` | `"AGENTS.md"` | The file whose `lessons:start` to `lessons:end` block gets the top rules. |
 | `repo` | `""` | `owner/name`, to make PR numbers links. |
 
+A class in the seed may carry `enforced_by`, naming the check that fails on it (a lint rule,
+a test). Its rule is then left out of the `AGENTS.md` block, which names it in one line with
+its check; the lessons page and the reviewers still get the rule.
+
 ## [agents]
 
 | Key | Default | Meaning |
