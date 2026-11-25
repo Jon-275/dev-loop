@@ -19,6 +19,7 @@ from devloop.review.model import (
     Effort,
     Finding,
     IncompleteReview,
+    NotSent,
     ReplyCutOff,
     ReviewError,
     Settings,
@@ -320,6 +321,65 @@ def test_an_unreadable_reply_fails_the_check_and_posts_nothing(
     assert capsys.readouterr().out.startswith(
         "::error title=Testbot review::Testbot's reply is not JSON"
     )
+
+
+# Built at run time, so this file holds no string in a key's own format.
+_AWS_KEY = "AKIA" + "ABCDEFGHIJKLMNOP"
+
+
+def _with_secret(repo: Path, path: str = "src/sync.py") -> Run:
+    """Return a pull request whose one file holds a likely secret."""
+    pull = Run(repo, [path], lambda prompt, effort: _reply())
+    (repo / path).write_text(f"a = 1\nKEY = '{_AWS_KEY}'\n")
+    pull.head = commit(repo, "a key by mistake")
+    return pull
+
+
+def test_a_likely_secret_stops_the_review_before_anything_is_sent(repo: Path) -> None:
+    """Nothing is asked and nothing is posted; the error names the place, never the key."""
+    pull = _with_secret(repo)
+    with pytest.raises(NotSent) as error:
+        pull()
+    assert pull.asked == [] and pull.posted == []
+    assert "src/sync.py:2 (AWS access key id)" in str(error.value)
+    assert _AWS_KEY not in str(error.value) and _AWS_KEY not in error.value.status
+    assert error.value.status == "Not sent: 1 likely secret(s) in 1 file(s); see the run"
+
+
+def test_a_secret_in_an_allowed_file_or_with_the_scan_off_is_sent(repo: Path) -> None:
+    """The exemption and the switch both let the review run as before."""
+    pull = _with_secret(repo, "tests/fixtures/keys.py")
+    pull(r.Policy(files=REVIEWED_FILES, secret_allow=("tests/fixtures/*",)))
+    assert len(pull.asked) == 1
+    pull(r.Policy(files=REVIEWED_FILES, secret_scan=False))
+    assert len(pull.asked) == 2
+
+
+def test_the_failed_check_reports_the_secret_count_as_its_status(
+    repo: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """The workflow gets a status of counts only, and the log gets one annotation."""
+    output = tmp_path / "github-output"
+    monkeypatch.setenv("GITHUB_OUTPUT", str(output))
+    assert r.outcome(PROVIDER, _with_secret(repo)) == 1
+    assert output.read_text() == (
+        "status_description=Not sent: 1 likely secret(s) in 1 file(s); see the run\n"
+    )
+    printed = capsys.readouterr().out
+    assert printed.startswith("::error ") and _AWS_KEY not in printed
+
+
+def test_an_outside_pull_request_over_the_limit_sends_nothing(repo: Path) -> None:
+    """Over ``max_chars`` nothing is asked; under it, or with no limit, the review runs."""
+    pull = Run(repo, ["src/sync.py"], lambda prompt, effort: _reply())
+    with pytest.raises(NotSent) as error:
+        pull(r.Policy(files=REVIEWED_FILES, max_chars=10))
+    assert pull.asked == [] and pull.posted == []
+    assert "over review.outside_max_chars (10)" in str(error.value)
+    assert error.value.status.startswith("Not sent: ") and "limit of 10" in error.value.status
+    pull(r.Policy(files=REVIEWED_FILES, max_chars=100_000))
+    pull(r.Policy(files=REVIEWED_FILES))
+    assert len(pull.asked) == 2
 
 
 def test_an_annotation_stays_one_workflow_command() -> None:

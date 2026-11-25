@@ -213,6 +213,9 @@ jobs:
         working-directory: pr
         env:
           DEVLOOP_API_KEY: ${{ secrets.api_key }}
+          # An outside pull request a maintainer approved: review.outside_max_chars
+          # limits what it may send.
+          DEVLOOP_OUTSIDE: ${{ needs.gate.outputs.reason == 'approved' }}
           GITHUB_TOKEN: ${{ github.token }}
           PROVIDER: ${{ inputs.provider }}
           PR_NUMBER: ${{ github.event.pull_request.number }}

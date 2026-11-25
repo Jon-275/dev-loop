@@ -156,6 +156,19 @@ class IncompleteReview(ReviewError):
         self.status = status
 
 
+class NotSent(ReviewError):
+    """Nothing was sent to the reviewer, on purpose; the check fails and says why.
+
+    ``status`` is the commit status description: counts only, no paths and no text
+    from the pull request, so it is safe for ``$GITHUB_OUTPUT``.
+    """
+
+    def __init__(self, message: str, status: str) -> None:
+        """Keep the log ``message`` and the short ``status`` description."""
+        super().__init__(message)
+        self.status = status
+
+
 class SettingsError(ReviewError):
     """The run's environment lacks a setting; the command cannot run (exit 2)."""
 

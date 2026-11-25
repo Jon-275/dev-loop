@@ -38,6 +38,9 @@ POSIX paths from the project root, and `*` also crosses `/`.
 | `feedback` | `""` | The feedback store `devloop feedback` writes and the prompt learns from. |
 | `lessons` | `""` | The patterns file `devloop lessons` writes and every reviewer checks first. |
 | `reviewers` | `{}` | Per-reviewer settings, one `[review.reviewers.NAME]` table each (below). |
+| `secret_scan` | `true` | Refuse to send a diff or a file that holds a likely secret (a provider's key format or a private-key header). The check fails and names the file, the line and the kind of key, never the text. |
+| `secret_allow` | `[]` | Globs of files the secret scan skips, for test values that only look like keys. |
+| `outside_max_chars` | `150000` | The most characters of diff and file contents an approved outside pull request may send (`gate: members`). `0`: no limit. |
 
 ### [review.reviewers.NAME]
 

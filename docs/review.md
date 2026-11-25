@@ -100,9 +100,28 @@ Three things to know:
   member of an organisation whose membership is private is not reported as one, and
   waits like anyone else.
 
+**What an approved outside pull request may cost** is bounded by
+`review.outside_max_chars` (150,000 characters of diff and file contents by default).
+Over it, nothing is sent and the status says so; review it by hand, ask for a smaller
+pull request, or raise the limit.
+
 The decision is made in a job that holds no key and reads only what GitHub sets on the
 event. `approval_label` and `trusted_bots` rename the label and the trusted logins. An
 unknown `gate` value fails the run and reviews nothing.
+
+### Secrets are not sent
+
+Before the first request, the diff and the file contents a review is about to send are
+checked for likely secrets: a provider's own key format (AWS, GitHub, Google, Slack,
+Anthropic, OpenAI, Stripe) or a private-key header. If one is found nothing is sent to
+any reviewer, the check fails, and the run names the file, the line and the kind of key,
+never the text. Remove the key, and rotate it if it is real: it is already in the pull
+request's history. A file whose test values only look like keys goes in
+`review.secret_allow`; `secret_scan = false` turns the check off.
+
+The patterns are exact formats, so a secret with no recognisable shape (a password, a
+random token) is not caught. This is a last check, not a replacement for secret scanning
+on the repository.
 
 ## Locally
 

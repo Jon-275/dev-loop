@@ -27,8 +27,16 @@ from devloop.review.threads import load_feedback
 SHARED_KEY = "DEVLOOP_API_KEY"
 
 
-def policy(config: Config) -> Policy:
-    """Return the run policy a project's ``devloop.toml`` sets."""
+#: Set to ``true`` by ``review.yml`` for an outside pull request a maintainer approved.
+OUTSIDE = "DEVLOOP_OUTSIDE"
+
+
+def policy(config: Config, *, outside: bool = False) -> Policy:
+    """Return the run policy a project's ``devloop.toml`` sets.
+
+    ``outside`` is whether the pull request is from outside the project: only then does
+    ``review.outside_max_chars`` limit what the run may send.
+    """
     review = config.review
     return Policy(
         files=review.files,
@@ -36,6 +44,9 @@ def policy(config: Config) -> Policy:
         blocking=review.blocking_severities,
         routes=review.providers,
         tiers=config.tiers,
+        secret_scan=review.secret_scan,
+        secret_allow=review.secret_allow,
+        max_chars=(review.outside_max_chars or None) if outside else None,
     )
 
 
@@ -117,7 +128,7 @@ def review(
             return run_review(
                 settings,
                 provider,
-                policy(config),
+                policy(config, outside=source.get(OUTSIDE) == "true"),
                 name=name,
                 ask=ask,
                 known=set if local else lambda: github.known_threads(settings, provider, names),
