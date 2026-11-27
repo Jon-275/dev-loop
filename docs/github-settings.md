@@ -71,6 +71,20 @@ These keys are judged: `required_checks`, `required_checks_bound`, `enforce_admi
 `merge_methods`. `required_checks` has no default: until the project lists its checks,
 that line is `not judged` and shows the checks found.
 
+### Check them every week
+
+`settings-check.yml` is a shared workflow that runs the command on a schedule. When a
+setting differs or was not judged, it opens one issue, "Repository settings differ from
+devloop.toml", with the report, and updates it on later runs. It closes the issue when a
+run is clean. The job may read the repository and write issues, and nothing else. Its
+header shows the job to copy.
+
+The workflow's own token cannot read admin settings: branch protection, the Actions
+permissions, and the security and merge fields come back `not judged`, so the issue
+stays open. To judge them, pass the optional secret `token`: a fine-grained token with
+read access to the repository's Administration. It is used for the report's GET calls
+only. The issue is written with the workflow's own token.
+
 ### Check by hand
 
 The command leaves these out, because the API does not show them reliably:

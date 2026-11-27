@@ -31,6 +31,7 @@ Pin each call to a release tag or commit. Each workflow's header shows the job t
 | `gate.yml` | last job of the review and labels callers | the `Merge gate` status: one required status in place of one per reviewer ([merge gate](gate.md)) |
 | `main-health.yml` | `push` to the default branch, last job | opens and closes a "main is red" issue |
 | `metrics.yml` | `schedule`, weekly | the weekly report, per authoring tool |
+| `settings-check.yml` | `schedule`, weekly, and `workflow_dispatch` | compares the repository's GitHub settings with `[github]`; opens one issue when they differ and closes it when they match ([GitHub settings](github-settings.md#check-the-settings)) |
 
 The review caller runs on `pull_request_target`, so it holds secrets: it must never check
 out or run the pull request's code. `review.yml` only reads the pull request through git.
