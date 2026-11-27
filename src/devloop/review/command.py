@@ -29,16 +29,32 @@ SHARED_KEY = "DEVLOOP_API_KEY"
 
 #: Set to ``true`` by ``review.yml`` for an outside pull request a maintainer approved.
 OUTSIDE = "DEVLOOP_OUTSIDE"
+#: Set to ``true`` by ``review.yml`` when a maintainer added the label for one more review.
+AGAIN = "DEVLOOP_REVIEW_AGAIN"
+#: The name of that label (``review.yml``'s ``again_label`` input), for the status text.
+AGAIN_LABEL = "DEVLOOP_AGAIN_LABEL"
+DEFAULT_AGAIN_LABEL = "review-again"
 
 
-def policy(config: Config, *, outside: bool = False) -> Policy:
+def policy(
+    config: Config,
+    *,
+    outside: bool = False,
+    again: bool = False,
+    again_label: str = DEFAULT_AGAIN_LABEL,
+) -> Policy:
     """Return the run policy a project's ``devloop.toml`` sets.
 
     ``outside`` is whether the pull request is from outside the project: only then does
-    ``review.outside_max_chars`` limit what the run may send.
+    ``review.outside_max_chars`` limit what the run may send. ``again`` is whether a
+    maintainer asked for one more review with the ``again_label`` label, which lifts
+    ``review.max_rounds`` for this run.
     """
     review = config.review
     return Policy(
+        max_rounds=review.max_rounds,
+        again=again,
+        again_label=again_label or DEFAULT_AGAIN_LABEL,
         files=review.files,
         high_effort=review.high_effort,
         blocking=review.blocking_severities,
@@ -101,6 +117,13 @@ def review(
     )
     ask = asker(reviewer, provider, settings.api_key, usage)
     names = marker_names(config)
+    history = github.History(settings, provider)
+    run_policy = policy(
+        config,
+        outside=source.get(OUTSIDE) == "true",
+        again=source.get(AGAIN) == "true",
+        again_label=source.get(AGAIN_LABEL, ""),
+    )
     open_ids: list[set[int]] = []
 
     def is_open(mark: ThreadMark) -> bool:
@@ -128,13 +151,14 @@ def review(
             return run_review(
                 settings,
                 provider,
-                policy(config, outside=source.get(OUTSIDE) == "true"),
+                run_policy,
                 name=name,
                 ask=ask,
                 known=set if local else lambda: github.known_threads(settings, provider, names),
                 post=post,
                 feedback=feedback,
-                previous=None if local else lambda: github.previous_review(settings, provider),
+                previous=None if local else history.previous,
+                rounds=None if local else history.rounds,
                 usage=usage,
                 is_open=is_open,
             )
