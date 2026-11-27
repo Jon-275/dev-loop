@@ -8,8 +8,8 @@ It writes two outputs for GitHub Actions:
 - ``doc_tests``: the test files matching ``docs.tests`` that mention a ``.md`` file. A
   docs-only run still runs them, because they read documents.
 
-Nothing under ``.github/`` or a skills folder is documentation, so a workflow or skill
-change always runs every check.
+Nothing under ``.github/`` or a skills folder is documentation, and neither is
+``devloop.toml``, so a workflow, skill or configuration change always runs every check.
 """
 
 from __future__ import annotations
@@ -19,15 +19,18 @@ from collections.abc import Iterable, Sequence
 from fnmatch import fnmatchcase
 from pathlib import Path
 
-from devloop.config import Docs
+from devloop.config import CONFIG_FILE, Docs
 from devloop.git import git, is_merge_ref
 
 
 def is_document(path: str, docs: Docs, code_dirs: Sequence[str] = ()) -> bool:
     """Return whether ``path`` is documentation (case-insensitive match on ``docs.files``).
 
-    Paths under ``.github/`` or ``code_dirs`` (the skills folders) are never documentation.
+    Paths under ``.github/`` or ``code_dirs`` (the skills folders) are never documentation,
+    and neither is ``devloop.toml``: it holds the rules the checks apply.
     """
+    if path == CONFIG_FILE:
+        return False
     if any(path.startswith(f"{folder}/") for folder in (".github", *code_dirs)):
         return False
     return any(fnmatchcase(path.lower(), pattern.lower()) for pattern in docs.files)
