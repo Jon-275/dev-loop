@@ -16,7 +16,7 @@ prior site active until the new downloads have been verified.
    breaking change a major (with an upgrade note).
 2. **Branch** from the latest default branch: `release/v<version>` in its own worktree.
 3. **Bump the version** everywhere the project records it (the package metadata, the
-   lockfile entry, any install line in the README, and `framework.version` in
+   version the package itself reports, such as `__version__`, the lockfile entry, any install line in the README, and `framework.version` in
    `devloop.toml` when this project is devloop itself).
 4. **Build the changelog:** `devloop changelog check`, then `devloop changelog build`.
    Move the new entries under a `## <version> - <date>` heading and leave the empty

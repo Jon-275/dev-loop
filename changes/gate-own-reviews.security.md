@@ -1,1 +1,0 @@
-- **dev-loop's own model reviews wait for a maintainer on an outside pull request.** `review-trusted.yml` now calls the shared review with `gate: members`, triggers on `labeled`, and removes the `ai-review-approved` label on every push. Before, a pull request from any account was sent to both reviewers on the repository's keys.
