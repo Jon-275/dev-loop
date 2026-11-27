@@ -12,6 +12,48 @@
 
 ### Security
 
+## 0.12.0 - 2026-11-27
+
+### Breaking changes
+
+- **The model review waits for a maintainer on an outside pull request unless you say otherwise.** `review.yml`'s `gate` input now defaults to `members`: the owner, members, collaborators and `trusted_bots` are reviewed on every push, and anyone else waits for the `ai-review-approved` label. Before, the default reviewed every pull request, so a public project that set nothing let any account spend its key. To keep the old behaviour pass `gate: everyone`; an empty `gate` is now an error. If outside pull requests should be reviewable, trigger on `labeled` and call `unapprove.yml`.
+
+### Added
+
+- **The repository has the files it tells adopters to have.** `SECURITY.md` (private reporting), `CONTRIBUTING.md` (set-up, what a change needs, and when a pull request is sent to the model reviewers), a `CODEOWNERS` file for the workflows and review code, a pull request template and two issue templates.
+- **Financial modeling council pack and PR guidance.** Added the `financial-modeling` council library role and workbook dependency/file signals (`openpyxl`, `xlsxwriter`, `xlwings`, `*.xlsx`, `*.xlsm`), documented `exclude_blocks` markers for synced reference tables, and updated `pr-workflow` to pass multi-line PR bodies via `--body-file`.
+- **`devloop gate --pr N --repo OWNER/NAME [--run-url URL]`.** It reads `[gate]` from the `devloop.toml` in the folder it runs in, judges the pull request and posts the gate's commit status with `GITHUB_TOKEN`. Exit code 0 means a verdict was posted or none is due, 1 that it could not check, and 2 that it could not start. It writes the status's name to `$GITHUB_OUTPUT` as `context`. `gate.context` must be one line of at most 100 characters.
+- **A `[gate]` table in `devloop.toml`, for the merge gate.** It names the gate's commit status, the documents of the light lane, extra control files, the statuses and checks the strict lane needs, the statuses that block the light lane, the trusted bots and the size of a light change. `statuses` defaults to `labels.wait_for` plus `Review labels`.
+- **The merge gate reads a pull request and posts its status (`devloop.gate.reader`).** It posts nothing for a pull request that is closed, goes into another branch than the default one, or comes from a fork with a head a branch of the repository also heads (the rule `devloop labels` uses, now shared as `status_guard.head_of`). After those guards it marks the head pending, reads the changed files by the two commits, checks the list is complete, and posts the verdict. A read that fails ends as a `failure`, never a pass.
+- **The merge gate's lane rules (`devloop.gate.rules`).** A pull request is in the light lane only when every changed file is a regular document that `gate.light` names, with a plain path, and the list of files is complete and no longer than `gate.max_light_files`. Anything else is strict. Hidden files and folders, `devloop.toml`, `devloop/`, agent instructions, build and tool settings, the folders and files `devloop.toml` names and `gate.control` are control files: they are never documents, and a change to one is flagged.
+- **The merge gate's verdict rules.** A strict pull request passes only when every status in `gate.statuses` and every check in `gate.checks` passed; a failed one is a failure that names it, and one that is missing or not finished is pending. A light pull request passes unless a `gate.light_blocks` status failed. A change to a control file by an author who is not trusted never passes. A status counts only from the workflow account, and a check only from its configured app.
+- **`gate.yml`, a shared workflow for the `Merge gate` status.** Call it as the last job of the workflows that post reviews and labels, and require its one status in branch protection in place of one per reviewer: a pull request of documents only passes without waiting for a reviewer, and any other needs every status and check of `[gate]` on its head. It installs devloop and reads `devloop.toml` from the default branch, holds no secret, runs one evaluation of a pull request at a time, and never posts pending or success from the shell. dev-loop's own review workflows now call it. See docs/gate.md for the lanes, the control files and how to roll it out.
+- Add a standalone reusable drift workflow for branch protection that preserves its verdict across pull request label events.
+- **`unapprove.yml`, a shared workflow that removes the approval label on every push.** Approval covers one head, and each project had to write this job itself. It holds no key and checks out nothing, and it succeeds when another push has already removed the label.
+
+### Changed
+
+- Add a model-validation skill and document how to verify and publish matching model artifacts and test persisted results for stale inputs and interrupted runs.
+- **Commit attribution requires opt-in.** The installed hook adds trailers only when the repository sets `agents.commit_attribution = true` and supplies a valid attribution value. Set this option when upgrading a project that wants to continue using trailers.
+
+### Fixed
+
+- Pass the reusable approval-withdrawal workflow its declared read permission so GitHub can start the required reviewer jobs.
+
+### Security
+
+- **dev-loop's own model reviews wait for a maintainer on an outside pull request.** `review-trusted.yml` now calls the shared review with `gate: members`, triggers on `labeled`, and removes the `ai-review-approved` label on every push. Before, a pull request from any account was sent to both reviewers on the repository's keys.
+- **A pull request does not choose its own rules.** In `pr-hygiene.yml`, `devloop changes`, `devloop size` and `devloop changelog check` now read `devloop.toml` from the base commit (`--config-from HEAD^1`). A pull request can no longer widen `docs.files`, raise `pr.max_lines`, add to `pr.exclude` or move `changelog.dir` for its own run; a change to these settings takes effect from the next pull request. A base file that cannot be read fails the check. Only a base with no `devloop.toml` falls back to the pull request's file. A change to `devloop.toml` always counts as code. `pr-hygiene.yml` and `main-health.yml` pin the same uv and Python versions as the other shared workflows.
+- **A fork's pull request can no longer replace a status on a branch's head commit.** A
+  commit status belongs to a commit. A pull request from a fork whose head is also the
+  head of a branch in the base repository could overwrite `Review labels`, a
+  `<Provider> review` or `Council review` there, and turn a failure green. The shared
+  workflows and `devloop council report --post` now write no status for such a pull
+  request, say why in a notice, and do not run its review. `labels.yml` no longer posts
+  pending from the shell; `devloop labels` posts it after the check. The gate job of
+  `review.yml` now needs `contents: read`, for one read of the branches. See "A status
+  belongs to a commit" in docs/security.md.
+
 ## 0.11.0 - 2026-11-25
 
 ### Added
