@@ -357,6 +357,7 @@ def parse_config(text: str) -> Config:
     docs = _table(data, "docs", {"files", "tests"})
     d_pr, d_rev, d_lab, d_ag, d_sk, d_co = PR(), Review(), Labels(), Agents(), Skills(), Council()
     changelog = _changelog(log)
+    reviewers = _reviewers(_table(review, "reviewers", None))
     wait_for = _strs(labels, "labels.wait_for", "wait_for", d_lab.wait_for)
     return Config(
         framework=Framework(version=_str(fw, "framework.version", "version", "")),
@@ -378,7 +379,7 @@ def parse_config(text: str) -> Config:
             high_effort=_strs(review, "review.high_effort", "high_effort", d_rev.high_effort),
             feedback=_optional_path(review, "review.feedback", "feedback"),
             lessons=_optional_path(review, "review.lessons", "lessons"),
-            reviewers=_reviewers(_table(review, "reviewers", None)),
+            reviewers=reviewers,
             secret_scan=_bool(review.get("secret_scan", d_rev.secret_scan), "review.secret_scan"),
             secret_allow=_strs(review, "review.secret_allow", "secret_allow", d_rev.secret_allow),
             outside_max_chars=_non_negative_int(
@@ -425,7 +426,7 @@ def parse_config(text: str) -> Config:
             files=_strs(docs, "docs.files", "files", Docs().files),
             tests=_strs(docs, "docs.tests", "tests", Docs().tests),
         ),
-        gate=_gate(_table(data, "gate", _GATE_KEYS), changelog.dir, wait_for),
+        gate=_gate(_table(data, "gate", _GATE_KEYS), changelog.dir, wait_for, reviewers),
     )
 
 
@@ -694,13 +695,24 @@ def _gate_checks(value: object) -> tuple[GateCheck, ...]:
     return tuple(checks)
 
 
-def _gate(table: Mapping[str, Any], changelog_dir: str, wait_for: tuple[str, ...]) -> Gate:
+#: Statuses other devloop jobs post, whatever the configuration.
+OTHER_STATUSES = ("Review labels", "Council review")
+
+
+def _gate(
+    table: Mapping[str, Any],
+    changelog_dir: str,
+    wait_for: tuple[str, ...],
+    reviewers: Mapping[str, Reviewer],
+) -> Gate:
     """Validate ``[gate]``.
 
     ``light`` defaults to the documents with the configured changelog folder, and
     ``statuses`` to the reviews ``labels.wait_for`` names plus ``Review labels``. The
     strict lane must need something, every signal has its own name, and the gate never
-    waits for its own status.
+    waits for its own status. Its status has a name no other devloop job posts (the
+    labels check, the council, a reviewer or a ``labels.wait_for`` status): that job
+    would write its own result under the gate's name.
     """
     d = Gate()
     context = _str(table, "gate.context", "context", d.context)
@@ -717,6 +729,9 @@ def _gate(table: Mapping[str, Any], changelog_dir: str, wait_for: tuple[str, ...
         raise ConfigError("gate.statuses and gate.checks name a status or a check twice")
     if context in (*needed, *light_blocks):
         raise ConfigError(f"gate.context {context!r}: the gate cannot wait for its own status")
+    reviews = [f"{name.capitalize()} review" for name in (*BUILT_IN_REVIEWERS, *reviewers)]
+    if context.casefold() in {name.casefold() for name in (*OTHER_STATUSES, *wait_for, *reviews)}:
+        raise ConfigError(f"gate.context {context!r} is a status another devloop job posts")
     return Gate(
         context=context,
         light=_globs(table, "light", gate_light(changelog_dir)),
