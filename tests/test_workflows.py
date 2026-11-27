@@ -165,10 +165,48 @@ def test_dev_loop_reviews_itself_on_pull_request_target_from_the_base_branch() -
     for name in ("gemini", "reflection"):
         job = caller["jobs"][name]
         assert job["uses"] == "./.github/workflows/review.yml"
-        assert job["with"] == {"provider": name, "devloop": "."}
+        assert job["with"] == {"provider": name, "devloop": ".", "gate": "members"}
     labels = caller["jobs"]["labels"]
     assert labels["uses"] == "./.github/workflows/labels.yml" and "always()" in labels["if"]
     assert sorted(labels["needs"]) == ["gemini", "reflection"]
+
+
+def test_an_outside_pull_request_here_waits_for_a_maintainer_s_label() -> None:
+    """Nobody outside spends the reviewer keys unasked: the repository is public."""
+    caller = _load("review-trusted.yml")
+    types = _on(caller)["pull_request_target"]["types"]
+    assert "labeled" in types and "synchronize" in types
+    keyed = [name for name, job in caller["jobs"].items() if "secrets" in job]
+    assert sorted(keyed) == ["gemini", "reflection"]
+    for name in keyed:
+        assert caller["jobs"][name]["with"]["gate"] == "members"
+        assert "approval_label" not in caller["jobs"][name]["with"]  # the default, as below
+
+
+def test_a_push_withdraws_the_approval_without_a_key_or_a_checkout() -> None:
+    """Approval covers one head, so the label goes when the head changes."""
+    job = _load("review-trusted.yml")["jobs"]["unapprove"]
+    assert job == {
+        "name": "Withdraw approval on a new push",
+        "if": "github.event.action == 'synchronize' && "
+        "contains(github.event.pull_request.labels.*.name, 'ai-review-approved')",
+        "runs-on": "ubuntu-24.04",
+        "timeout-minutes": 5,
+        "permissions": {"pull-requests": "write"},
+        "steps": [
+            {
+                "name": "Remove the approval label",
+                "env": {
+                    "GH_TOKEN": "${{ github.token }}",
+                    "PR_NUMBER": "${{ github.event.pull_request.number }}",
+                },
+                "run": 'gh api -X DELETE "repos/${GITHUB_REPOSITORY}/issues/${PR_NUMBER}'
+                '/labels/ai-review-approved"',
+            }
+        ],
+    }
+    shared = _on(_load("review.yml"))["workflow_call"]["inputs"]["approval_label"]
+    assert shared["default"] == "ai-review-approved"
 
 
 def test_the_labels_check_marks_pending_first_and_reports_a_run_that_posted_nothing() -> None:
