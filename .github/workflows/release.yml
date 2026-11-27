@@ -9,7 +9,8 @@
 # It does nothing when the version is the one the commit's first parent has, or when the
 # tag exists, so a later push never tags a later commit and a second run for the same
 # commit creates nothing. It fails, and creates nothing, when the new version is not
-# X.Y.Z, when the changelog has no section for it, or when the tags could not be read.
+# X.Y.Z, when the changelog has no section with an entry for it, or when the tags could
+# not be read.
 #
 # An existing tag is never moved: the tag is checked before anything is created, and
 # `gh release create` with a tag that exists attaches to it where it is.

@@ -12,7 +12,7 @@ States of a pushed commit:
 - **due**: the commit changed the version, no tag has that version, and the changelog
   has its section.
 - **refused**: the commit changed the version, but the version is not ``X.Y.Z`` or the
-  changelog has no section for it. Nothing is created and the run fails.
+  changelog has no section for it with at least one entry. Nothing is created and the run fails.
 
 Invariants:
 
@@ -85,7 +85,7 @@ def notes(changelog: str, version: str) -> str:
 
     Raises:
         ReleaseError: ``version`` is not ``X.Y.Z``, the changelog has no such section
-            or more than one, or the section is empty.
+            or more than one, or the section is empty or holds only headings.
 
     """
     check_version(version)
@@ -104,6 +104,8 @@ def notes(changelog: str, version: str) -> str:
     text = "\n".join(body).strip("\n")
     if not text.strip():
         raise ReleaseError(f"the changelog's section for {version} is empty")
+    if all(re.match(r"#{1,6}(\s|$)", line) for line in text.splitlines() if line.strip()):
+        raise ReleaseError(f"the changelog's section for {version} has no entry under any heading")
     return text + "\n"
 
 

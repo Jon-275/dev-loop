@@ -65,6 +65,28 @@ def test_a_changelog_without_one_section_for_the_version_is_refused(
         release.notes(changelog, "1.4.0")
 
 
+@pytest.mark.parametrize(
+    "body",
+    [
+        "### Added\n\n### Fixed\n",
+        "### Added\n\n\n### Changed\n\n### Fixed\n\n",
+        "### Added\n   \n#### Deeper\n",
+    ],
+)
+def test_a_section_with_headings_but_no_entry_is_refused(body: str) -> None:
+    """Empty ``###`` headings are not release notes: some line must not be a heading."""
+    changelog = f"## 1.4.0 - 2026-03-02\n\n{body}\n## 1.3.9 - 2026-02-01\n\n- An older fix.\n"
+    with pytest.raises(release.ReleaseError, match="has no entry"):
+        release.notes(changelog, "1.4.0")
+    with pytest.raises(release.ReleaseError, match="has no entry"):
+        release.due("1.4.0", "1.3.9", set(), changelog)
+
+
+def test_a_section_with_an_entry_under_one_heading_is_kept_whole() -> None:
+    changelog = "## 1.4.0 - 2026-03-02\n\n### Added\n\n### Fixed\n\n- A fix.\n"
+    assert release.notes(changelog, "1.4.0") == "### Added\n\n### Fixed\n\n- A fix.\n"
+
+
 def test_a_version_is_not_matched_inside_another() -> None:
     """``1.4.0`` is not the section of ``11.4.0`` or ``1.4.01``: the dots are literal too."""
     for other in ("11.4.0", "1.4.01", "1x4.0"):

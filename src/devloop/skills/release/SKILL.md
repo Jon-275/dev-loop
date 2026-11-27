@@ -33,8 +33,8 @@ prior site active until the new downloads have been verified.
    `gh release view v<version>`, and install from the new tag once to confirm it reports
    the new version.
 8. **If the workflow failed, or the project has none.** It creates nothing when the
-   changelog has no `## <version> - <date>` section or the version is not `X.Y.Z`. Re-run a
-   run that only broke (a network error). Otherwise fix the cause in its own PR. A
+   changelog has no `## <version> - <date>` section, the section has no entry, or the
+   version is not `X.Y.Z`. Re-run a run that only broke (a network error). Otherwise fix the cause in its own PR. A
    later push does not release, because only the commit that changed the version does,
    so then publish by hand on the release's merge commit:
    `devloop release-notes --version <version> > <notes>`, then
