@@ -47,3 +47,47 @@ request ([a cap on reviews](review.md#a-cap-on-reviews)). It does not bound:
 - runs that fail before they post, such as a model error: they post no review, so they
   are not counted, though the provider may bill their tokens;
 - reviews a maintainer asks for with the `review-again` label.
+
+## GitHub API reads per run
+
+`devloop labels` and `devloop gate` read GitHub each time they run, and a reply on a
+review thread starts both. The workflow token (`GITHUB_TOKEN`) may make 1,000 REST
+requests per repository per hour. GraphQL calls count against a separate limit. Tests
+pin the counts below, so a change that adds a request fails a test.
+
+One evaluation of a typical pull request (from a branch of the repository, with under
+100 threads and under 100 statuses):
+
+| Run | REST reads | GraphQL reads | Status writes | Requests |
+|---|---|---|---|---|
+| `devloop labels` | 3 | 2 | 2 | 7 |
+| `devloop gate`, light lane, one check | 10 | 0 | 2 | 12 |
+| `devloop gate`, strict lane, two statuses and one check | 10 | 0 | 2 | 12 |
+
+What moves the counts:
+
+- The number of threads does not: threads come 100 to a page. Each further page is one
+  more GraphQL read per pass.
+- `devloop labels`: each name in `labels.wait_for_checks` adds 2 reads.
+- `devloop gate`: one listing answers every status. Each check in `gate.checks` is 2 of
+  the reads above. With no check the gate makes 8 reads.
+- A fork's pull request adds 1 read (the status guard).
+- A verdict that changed while it was being posted adds 1 write.
+- `gate.yml` itself reads the head once before devloop starts: 1 more REST read per run.
+
+Each run reads the reviews twice, before and after it posts. The second read is there
+on purpose: a reply or a review can land while the run is posting. No read was removed.
+
+**A busy pull request.** A person's reply can start two workflow runs: GitHub sends
+the comment event and the review event that wraps a single reply. Each run is one
+`devloop labels` and one `devloop gate`:
+
+- REST requests per run: 5 (labels) + 12 (gate) + 1 (`gate.yml`) = 18.
+- Per reply, at two runs: 36 REST requests and 4 GraphQL reads.
+- 20 replies in an hour: 20 x 36 = 720 of the 1,000 REST requests.
+
+That leaves 280 for everything else in the hour: CI, the reviews and other pull
+requests. To stay under the limit, answer the threads of a round together and submit
+them as one review: one review with ten replies starts the checks far fewer times than
+ten single replies. `gate.yml` also runs one evaluation of a pull request at a time and
+keeps only the newest waiting run, so a burst of replies costs less than the sum above.
