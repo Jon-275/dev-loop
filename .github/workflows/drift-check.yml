@@ -22,7 +22,8 @@ jobs:
           persist-credentials: false
       - uses: astral-sh/setup-uv@1db35dd8eee11c5894872e0b383ae6c406cf738d # v10.4.0
         with:
-          python-version: '3.12'
+          version: "0.13.7"
+          python-version: "3.12.14"
       - name: Check generated repository files
         env:
           DEVLOOP: ${{ inputs.devloop }}

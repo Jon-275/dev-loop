@@ -57,7 +57,7 @@ status is what turns a rule into a gate.
 
 Use a separate caller like the [repository drift workflow](https://github.com/Jon-275/dev-loop/blob/main/.github/workflows/repository-drift.yml).
 Replace its local workflow call and `devloop: '.'` with the same pinned commit for the
-reusable workflow and the installed tool. Use the repository's default branch. If
+reusable workflow and the installed tool. Use the repository's default branch and keep the `edited` trigger for retargeted PRs. If
 using a merge queue, also trigger the caller for `merge_group` with `checks_requested`.
 
 The advisory workflow runs on label events and skips its doctor job on those events.

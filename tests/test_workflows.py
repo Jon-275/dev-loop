@@ -68,7 +68,7 @@ def test_repository_drift_does_not_emit_a_label_only_verdict() -> None:
     assert trigger == {
         "pull_request": {
             "branches": ["main"],
-            "types": ["opened", "reopened", "synchronize", "ready_for_review"],
+            "types": ["opened", "reopened", "synchronize", "ready_for_review", "edited"],
         },
         "push": {"branches": ["main"]},
     }
