@@ -53,9 +53,17 @@ For each pull request a reviewer reviews, its vendor receives:
 - the full text of up to 15 changed files (up to 250,000 characters in all);
 - the names of changed files the diff leaves out.
 
-devloop does not redact secrets from that text. A secret committed in a pull request is
-sent to every reviewer's vendor, so turn on secret scanning with push protection, and
-leave secret-bearing files out of `review.files`.
+By default nothing is sent for a pull request from an outside author until a maintainer
+has looked at it and added the approval label
+([outside pull requests](review.md#outside-pull-requests)).
+
+devloop does not redact that text. Before the first request it checks what it is about
+to send for likely secrets (`review.secret_scan`, on by default). If it finds one, it
+sends nothing to any reviewer and the check fails
+([secrets are not sent](review.md#secrets-are-not-sent)). The check knows exact key
+formats only. A password or a random token has no such format, so one committed in a
+pull request is still sent to every reviewer's vendor. Turn on secret scanning with push
+protection, and leave secret-bearing files out of `review.files`.
 
 ## Statuses any workflow can post
 
