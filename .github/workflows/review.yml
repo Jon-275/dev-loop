@@ -152,9 +152,26 @@ jobs:
         # repository would replace that branch's status, so it gets none. A read that
         # fails, or an answer that is not a count, fails the step: could not check.
         run: |
+          gh_api() {  # gh api; tried again after 2 s, then 4 s, on HTTP 429, a 5xx or a lost connection
+            local try out err
+            err="$(mktemp)"
+            for try in 1 2 3; do
+              if out="$(gh api "$@" 2>"$err")"; then
+                if [ -n "$out" ]; then printf '%s\n' "$out"; fi
+                return 0
+              fi
+              case "$(<"$err")" in
+                *"HTTP 429"* | *"HTTP 5"[0-9][0-9]* | *"error connecting to"* | *' "https://'*'": '*) ;;
+                *) break ;;
+              esac
+              if [ "$try" -lt 3 ]; then sleep "$((try * 2))"; fi
+            done
+            { printf '%s\n' "$out"; cat "$err"; } >&2
+            return 1
+          }
           due=true
           if [ "$HEAD_REPO" != "$GITHUB_REPOSITORY" ]; then
-            shared="$(gh api "repos/${GITHUB_REPOSITORY}/commits/${HEAD_SHA}/branches-where-head" --jq length)"
+            shared="$(gh_api "repos/${GITHUB_REPOSITORY}/commits/${HEAD_SHA}/branches-where-head" --jq length)"
             case "$shared" in
               0) ;;
               '' | *[!0-9]*)
@@ -178,7 +195,24 @@ jobs:
           HEAD_SHA: ${{ github.event.pull_request.head.sha }}
           RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
         run: |
-          gh api "repos/${GITHUB_REPOSITORY}/statuses/${HEAD_SHA}" \
+          gh_api() {  # gh api; tried again after 2 s, then 4 s, on HTTP 429, a 5xx or a lost connection
+            local try out err
+            err="$(mktemp)"
+            for try in 1 2 3; do
+              if out="$(gh api "$@" 2>"$err")"; then
+                if [ -n "$out" ]; then printf '%s\n' "$out"; fi
+                return 0
+              fi
+              case "$(<"$err")" in
+                *"HTTP 429"* | *"HTTP 5"[0-9][0-9]* | *"error connecting to"* | *' "https://'*'": '*) ;;
+                *) break ;;
+              esac
+              if [ "$try" -lt 3 ]; then sleep "$((try * 2))"; fi
+            done
+            { printf '%s\n' "$out"; cat "$err"; } >&2
+            return 1
+          }
+          gh_api "repos/${GITHUB_REPOSITORY}/statuses/${HEAD_SHA}" \
             -f state=pending -f "context=${PROVIDER^} review" \
             -f "description=Waiting for a maintainer to add the ${APPROVAL_LABEL} label" \
             -f "target_url=${RUN_URL}"
@@ -212,9 +246,26 @@ jobs:
         # repository would replace that branch's status, so it gets none. A read that
         # fails, or an answer that is not a count, fails the step: could not check.
         run: |
+          gh_api() {  # gh api; tried again after 2 s, then 4 s, on HTTP 429, a 5xx or a lost connection
+            local try out err
+            err="$(mktemp)"
+            for try in 1 2 3; do
+              if out="$(gh api "$@" 2>"$err")"; then
+                if [ -n "$out" ]; then printf '%s\n' "$out"; fi
+                return 0
+              fi
+              case "$(<"$err")" in
+                *"HTTP 429"* | *"HTTP 5"[0-9][0-9]* | *"error connecting to"* | *' "https://'*'": '*) ;;
+                *) break ;;
+              esac
+              if [ "$try" -lt 3 ]; then sleep "$((try * 2))"; fi
+            done
+            { printf '%s\n' "$out"; cat "$err"; } >&2
+            return 1
+          }
           due=true
           if [ "$HEAD_REPO" != "$GITHUB_REPOSITORY" ]; then
-            shared="$(gh api "repos/${GITHUB_REPOSITORY}/commits/${HEAD_SHA}/branches-where-head" --jq length)"
+            shared="$(gh_api "repos/${GITHUB_REPOSITORY}/commits/${HEAD_SHA}/branches-where-head" --jq length)"
             case "$shared" in
               0) ;;
               '' | *[!0-9]*)
@@ -239,7 +290,24 @@ jobs:
         # The status is "<Provider> review", the reviewer's name capitalised, as devloop
         # names it; it is set right after the guard, so every failure below reports.
         run: |
-          gh api "repos/${GITHUB_REPOSITORY}/statuses/${HEAD_SHA}" \
+          gh_api() {  # gh api; tried again after 2 s, then 4 s, on HTTP 429, a 5xx or a lost connection
+            local try out err
+            err="$(mktemp)"
+            for try in 1 2 3; do
+              if out="$(gh api "$@" 2>"$err")"; then
+                if [ -n "$out" ]; then printf '%s\n' "$out"; fi
+                return 0
+              fi
+              case "$(<"$err")" in
+                *"HTTP 429"* | *"HTTP 5"[0-9][0-9]* | *"error connecting to"* | *' "https://'*'": '*) ;;
+                *) break ;;
+              esac
+              if [ "$try" -lt 3 ]; then sleep "$((try * 2))"; fi
+            done
+            { printf '%s\n' "$out"; cat "$err"; } >&2
+            return 1
+          }
+          gh_api "repos/${GITHUB_REPOSITORY}/statuses/${HEAD_SHA}" \
             -f state=pending -f "context=${PROVIDER^} review" \
             -f "description=Reviewing this commit" -f "target_url=${RUN_URL}"
 
@@ -308,6 +376,23 @@ jobs:
           DESCRIPTION: ${{ steps.review.outputs.status_description }}
           RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
         run: |
+          gh_api() {  # gh api; tried again after 2 s, then 4 s, on HTTP 429, a 5xx or a lost connection
+            local try out err
+            err="$(mktemp)"
+            for try in 1 2 3; do
+              if out="$(gh api "$@" 2>"$err")"; then
+                if [ -n "$out" ]; then printf '%s\n' "$out"; fi
+                return 0
+              fi
+              case "$(<"$err")" in
+                *"HTTP 429"* | *"HTTP 5"[0-9][0-9]* | *"error connecting to"* | *' "https://'*'": '*) ;;
+                *) break ;;
+              esac
+              if [ "$try" -lt 3 ]; then sleep "$((try * 2))"; fi
+            done
+            { printf '%s\n' "$out"; cat "$err"; } >&2
+            return 1
+          }
           if [ "$OUTCOME" = "success" ] && [ "$DUE" = "true" ]; then
             state=success
             description="${DESCRIPTION:-Reviewed; resolve any finding threads before merge}"
@@ -318,6 +403,6 @@ jobs:
             state=failure
             description="The review could not run; open the run for the reason"
           fi
-          gh api "repos/${GITHUB_REPOSITORY}/statuses/${HEAD_SHA}" \
+          gh_api "repos/${GITHUB_REPOSITORY}/statuses/${HEAD_SHA}" \
             -f "state=${state}" -f "context=${PROVIDER^} review" \
             -f "description=${description}" -f "target_url=${RUN_URL}"

@@ -59,6 +59,11 @@ installs devloop and reads `devloop.toml`, the lenses and `review.feedback` from
 branch's checkout. It reads the pull request only through Git, so the pull request's own
 code never runs while the key is present.
 
+The shared workflows' own GitHub calls (reading the head, writing a status, removing the
+approval label) are tried up to three times: again after 2 seconds, then 4, on HTTP 429,
+a 5xx or a lost connection. Any other answer, such as 403, 404 or 422, is final at once.
+A call that still fails after the third try fails its step as before.
+
 After a completed review, only the pull request's own changes since then are reviewed,
 and a push that only merges the base branch is not reviewed again.
 
