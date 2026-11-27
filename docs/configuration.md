@@ -155,6 +155,7 @@ report still names it.
 |---|---|---|
 | `required_checks` | `[]` | The status checks the default branch must require, by name: exactly these, from classic branch protection and rulesets together. Empty means the project has not said, and the setting is reported as not judged. |
 | `required_checks_bound` | `true` | Every required check is bound to the app that posts it, and there is at least one. `false` accepts a check from any source. |
+| `require_pull_request` | `true` | A change reaches the default branch only through a pull request. The number of approvals is not judged. |
 | `enforce_admins` | `true` | The branch rules apply to administrators too. |
 | `allow_force_pushes` | `false` | Whether a force push to the default branch is allowed. |
 | `allow_deletions` | `false` | Whether the default branch can be deleted. |

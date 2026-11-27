@@ -299,6 +299,7 @@ class GitHub:
 
     required_checks: tuple[str, ...] | str = ()
     required_checks_bound: bool | str = True
+    require_pull_request: bool | str = True
     enforce_admins: bool | str = True
     allow_force_pushes: bool | str = False
     allow_deletions: bool | str = False
@@ -833,8 +834,8 @@ def _github(table: Mapping[str, Any]) -> GitHub:
     if methods != SKIP and (
         not isinstance(methods, list)
         or not methods
+        or not all(isinstance(m, str) and m in MERGE_METHODS for m in methods)
         or len(set(methods)) != len(methods)
-        or not all(m in MERGE_METHODS for m in methods)
     ):
         raise ConfigError(
             f'github.merge_methods must be a list of {MERGE_METHODS}, each once, or "{SKIP}"'
@@ -843,6 +844,7 @@ def _github(table: Mapping[str, Any]) -> GitHub:
         key: _switch(table, key, getattr(d, key))
         for key in (
             "required_checks_bound",
+            "require_pull_request",
             "enforce_admins",
             "allow_force_pushes",
             "allow_deletions",
