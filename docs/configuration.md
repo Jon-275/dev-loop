@@ -4,10 +4,10 @@
 optional except `framework.version`; an unknown section or key is an error. Globs match
 POSIX paths from the project root, and `*` also crosses `/`.
 
-Commands read the `devloop.toml` in the project root. In `pr-hygiene.yml` the checks that
-judge a pull request (`devloop changes`, `devloop size` and `devloop changelog check`)
-read it from the base commit instead (`--config-from`), so a change to `[pr]`, `[docs]`
-or `[changelog]` applies from the next pull request
+Commands read the `devloop.toml` in the project root, with one exception. In
+`pr-hygiene.yml`, the checks that judge a pull request (`devloop changes`, `devloop size`
+and `devloop changelog check`) read it from the base commit (`--config-from`). A change
+to `[pr]`, `[docs]` or `[changelog]` therefore takes effect from the next pull request
 ([security model](security.md#a-pull-request-does-not-choose-its-own-rules)).
 
 ## [framework]

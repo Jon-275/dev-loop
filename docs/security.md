@@ -20,30 +20,29 @@ token, using the base branch's devloop.
 
 ## A pull request does not choose its own rules
 
-`pr-hygiene.yml` runs on `pull_request`, so its checkout is the pull request's merge and
-the `devloop.toml` on disk is the pull request's own copy. The checks that judge the pull
-request do not read that copy:
+`pr-hygiene.yml` runs on `pull_request`, so the `devloop.toml` in its checkout is the
+pull request's own copy. The checks that judge a pull request do not use that copy.
 
-- `devloop changes`, `devloop size` and `devloop changelog check` run with
-  `--config-from HEAD^1` and read `devloop.toml` from the base commit, as a Git object,
-  with no filter or text conversion. A pull request cannot widen `docs.files`, raise
-  `pr.max_lines`, add to `pr.exclude` or move `changelog.dir` for its own run. The new
-  values apply from the next pull request, after this one is merged.
-- A change to `devloop.toml` is always code, like a change under `.github/` or a skills
-  folder, so it never skips the caller's code checks.
-- If the base has no `devloop.toml` (the pull request that adopts devloop), the pull
-  request's file is used and the log says so. This is the only case where a pull request's
-  own rules apply.
-- If the base's file cannot be read or is not valid, the check fails (exit 2) and
-  `devloop changes` answers `code=true`. It never falls back silently.
+- **Rules come from the base.** `devloop changes`, `devloop size` and
+  `devloop changelog check` run with `--config-from HEAD^1` and read `devloop.toml` from
+  the base commit. A pull request cannot widen `docs.files`, raise `pr.max_lines`, add
+  to `pr.exclude` or move `changelog.dir` for its own run. A change to these settings
+  takes effect from the next pull request.
+- **A change to `devloop.toml` is code.** Like a change under `.github/` or a skills
+  folder, it never skips the caller's code checks.
+- **A base with no `devloop.toml`.** This is the pull request that adopts devloop. Its
+  own file is used, and the log says so. It is the only case where a pull request's own
+  rules apply.
+- **A base file that cannot be read or is not valid.** The check fails with exit code 2,
+  and `devloop changes` answers `code=true`. It never falls back without saying so.
 
-`devloop doctor --check` reads the pull request's own `devloop.toml` on purpose: the file
-must be valid, and the layout must match it, once the pull request is merged.
+`devloop doctor --check` still reads the pull request's own `devloop.toml`. That is on
+purpose: the file must be valid once the pull request is merged.
 
-This covers the rules, not the workflow. A `pull_request` run uses the pull request's copy
-of the calling workflow, so protect `.github/workflows/` as described under
+This protects the rules, not the workflow. A `pull_request` run uses the pull request's
+copy of the calling workflow. So protect `.github/workflows/` as described under
 [Statuses any workflow can post](#statuses-any-workflow-can-post), and pin the shared
-workflow and the `devloop` it installs to a release.
+workflow and devloop to a release.
 
 ## What each model vendor receives
 
