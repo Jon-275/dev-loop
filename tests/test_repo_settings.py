@@ -152,7 +152,13 @@ UNREADABLE = {
     )
     + ("required_checks_bound", "conversation_resolution", "code_owner_review"),
     # The rules classic protection already makes stay judged: one source is enough.
-    RULESETS: ("merge_methods", "required_checks", "required_checks_bound", "code_owner_review"),
+    RULESETS: (
+        "enforce_admins",
+        "merge_methods",
+        "required_checks",
+        "required_checks_bound",
+        "code_owner_review",
+    ),
     ACTIONS: ("sha_pinning_required",),
     WORKFLOW: ("default_token_read_only",),
     FORK: ("fork_pr_approval",),
@@ -345,27 +351,6 @@ def test_the_command_needs_a_token_a_repository_and_a_valid_config(
     assert cli(["doctor", "--root", str(tmp_path), "--json"]) == 2
     assert cli(["doctor", "--root", str(tmp_path), "--repo", "acme/widgets"]) == 2
     assert "t0ken" not in capsys.readouterr().out
-
-
-def test_a_ruleset_nobody_may_bypass_binds_administrators_when_classic_does_not() -> None:
-    answers = with_rulesets(baseline(), ruleset(7, {"type": "deletion"}))
-    answers[PROTECTION]["enforce_admins"] = on(False)
-    assert _lines(answers)["enforce_admins"].found is True
-    answers[f"{R}/rulesets/7"]["bypass_actors"] = [{"actor_type": "RepositoryRole"}]
-    assert _lines(answers)["enforce_admins"].status == rs.DIFFERS
-    answers[PROTECTION]["enforce_admins"] = on(True)
-    assert _lines(answers)["enforce_admins"].status == rs.OK  # classic still binds them
-
-
-def test_administrators_are_judged_from_a_ruleset_when_classic_cannot_be_read() -> None:
-    answers = with_rulesets(baseline(), ruleset(7, pull_request()))
-    answers[PROTECTION] = refused(403, "Forbidden")
-    lines = _lines(answers)
-    assert (lines["enforce_admins"].status, lines["enforce_admins"].found) == (rs.OK, True)
-    assert lines["require_pull_request"].status == rs.OK
-    answers[f"{R}/rulesets/7"]["bypass_actors"] = [{"actor_type": "Team"}]
-    line = _lines(answers)["enforce_admins"]
-    assert line.status == rs.NOT_JUDGED and "branch protection: HTTP 403" in line.reason
 
 
 def test_a_pull_request_rule_in_either_source_requires_a_pull_request() -> None:
