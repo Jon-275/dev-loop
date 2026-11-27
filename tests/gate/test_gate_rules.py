@@ -211,6 +211,21 @@ def test_a_star_stays_inside_one_folder_and_two_cross_folders(
     assert gate.matches(path, [glob]) is expected
 
 
+@pytest.mark.parametrize("key", ["review]\nlenses_dir", "council]\nroles_dir", "skills]\nproject"])
+@pytest.mark.parametrize("folder", [".", "./", "./."])
+def test_a_devloop_folder_set_to_the_root_makes_every_path_a_control_file(
+    key: str, folder: str
+) -> None:
+    """The root as the folder of lenses, roles or skills: nothing there is a document."""
+    text = f'[framework]\nversion = "0.1"\n[{key} = "{folder}"\n[gate]\nlight = ["*.md"]\n'
+    own = gate.rules(parse_config(text))
+    for name in ("audit.md", "notes/deep/a.md"):
+        found = gate.lane([_file(name)], expected=1, known=(), gate=own)
+        assert (found.light, found.control) == (False, True), name
+    usual = gate.rules(parse_config(text.replace(f'"{folder}"', '"somewhere"')))
+    assert gate.lane([_file("audit.md")], expected=1, known=(), gate=usual).light is True
+
+
 def test_a_mixed_pull_request_is_strict() -> None:
     """One file outside the allow-list makes the whole pull request strict."""
     assert _lane("docs/index.md", "src/app/x.py").light is False
@@ -314,6 +329,20 @@ def test_a_new_file_that_differs_from_an_existing_one_only_by_case_is_strict() -
     assert _of(*pair, known=known).light is False
     assert _of(_file("docs/README.md"), known=known).light is True
     assert _of(_file("docs/new.md", "added"), known=known).light is True
+
+
+def test_a_case_collision_counts_under_every_name_a_file_has_or_had() -> None:
+    """A rename is two names: each is compared with the others and with the default branch."""
+    known = ["docs/Foo.md", "docs/guides/setup.md"]
+    # A rename that changes only the case of a name.
+    assert _of(_file("docs/foo.md", "renamed", "docs/Foo.md"), known=known).light is False
+    assert _of(_file("docs/foo.md", "renamed", "docs/Foo.md")).light is False
+    # An earlier name that differs only by case from a path on the default branch.
+    assert _of(_file("docs/new.md", "renamed", "docs/GUIDES/setup.md"), known=known).light is False
+    # An earlier name that differs only by case from another file's name.
+    pair = [_file("docs/b.md", "renamed", "docs/Old.md"), _file("docs/old.md", "added")]
+    assert _of(*pair, known=known).light is False
+    assert _of(_file("docs/new.md", "renamed", "docs/Foo.md"), known=known).light is True
 
 
 def test_the_paths_of_the_default_branch_and_the_count_must_be_given_properly() -> None:
@@ -621,3 +650,12 @@ def test_a_bot_is_trusted_only_when_the_project_lists_it() -> None:
     dependabot = {**pull, "user": {"login": "dependabot[bot]", "type": "Bot"}}
     assert gate.is_trusted(dependabot, "o/r", ()) is False
     assert gate.is_trusted({}, "o/r", GATE.trusted_bots) is False
+
+
+def test_a_repository_name_is_compared_without_regard_to_case() -> None:
+    """GitHub ignores case in a repository's name, and the command's ``--repo`` is as typed."""
+    user = {"login": "helper[bot]", "type": "Bot"}
+    pull = {"author_association": "NONE", "user": user, "head": {"repo": {"full_name": "Acme/App"}}}
+    assert gate.is_trusted(pull, "acme/app", ("helper[bot]",)) is True
+    assert gate.is_trusted({**pull, "user": {**user, "login": BOT}}, "ACME/APP", ()) is True
+    assert gate.is_trusted(pull, "acme/apps", ("helper[bot]",)) is False
