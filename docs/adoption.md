@@ -27,6 +27,7 @@ Pin each call to a release tag or commit. Each workflow's header shows the job t
 | `pr-hygiene.yml` | `pull_request` | doctor, size, changelog, docs-only detection |
 | `review.yml` | `pull_request_target` | one job per model reviewer ([model reviews](review.md)) |
 | `labels.yml` | after the review jobs, and on review replies | the `Review labels` status |
+| `gate.yml` | last job of the review and labels callers | the `Merge gate` status: one required status in place of one per reviewer ([merge gate](gate.md)) |
 | `main-health.yml` | `push` to the default branch, last job | opens and closes a "main is red" issue |
 | `metrics.yml` | `schedule`, weekly | the weekly report, per authoring tool |
 
@@ -50,6 +51,9 @@ statuses:
 - the caller's code checks and `hygiene / devloop doctor`;
 - `<Name> review` for each model reviewer (for example `Gemini review`);
 - `Review labels`.
+
+Or require the one `Merge gate` status in place of the reviewers' statuses and
+`Review labels` ([merge gate](gate.md#rolling-it-out)).
 
 Block force pushes and deletion, and apply the rules to administrators too. A required
 status is what turns a rule into a gate.

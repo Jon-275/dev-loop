@@ -18,6 +18,7 @@ nav:
   - Cost model: cost.md
   - Upgrading: upgrading.md
   - Model reviews: review.md
+  - Merge gate: gate.md
   - Tool matrix: tool-matrix.md
   - Conformance benchmark: benchmark.md
   - Decisions:

@@ -22,3 +22,22 @@ jobs:
       statuses: write
     with:
       devloop: "."
+
+  # The merge gate, after the labels check it reads. Not for a bot's per-finding comments
+  # (its review event runs it once), and not for a fork's review or reply: that event's
+  # token cannot write a status, so the gate judges a fork's pull request on its next push.
+  merge-gate:
+    needs: [labels]
+    if: >-
+      always()
+      && (github.event_name != 'pull_request_review_comment'
+      || github.event.sender.type != 'Bot')
+      && github.event.pull_request.head.repo.full_name == github.repository
+    uses: ./.github/workflows/gate.yml
+    permissions:
+      checks: read
+      contents: read
+      pull-requests: read
+      statuses: write
+    with:
+      devloop: "."

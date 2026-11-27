@@ -46,6 +46,9 @@ devloop doctor --check    # check nothing has drifted; run this in CI
 - `devloop feedback`, `devloop labels`, `devloop lessons`: collect labelled review
   findings, require a label on every finding thread, and rank the bug classes review
   found into the rules every agent reads ([concepts](docs/concepts.md)).
+- `devloop gate --pr N --repo OWNER/NAME`: in CI, post the one `Merge gate` status: a
+  pull request of documents only waits for no reviewer, any other needs every review on
+  its head ([merge gate](docs/gate.md)).
 - `devloop metrics [--days N]`: the review loop's figures for the pull requests merged in
   a window, per authoring tool. `devloop agent --install` adds the `Agent:` trailer.
 - `devloop council plan|check|library|add`: the council's role cards
