@@ -40,32 +40,35 @@ require code-owner review, so a pull request cannot add a workflow that posts a 
 
 ## A status belongs to a commit
 
-GitHub keeps a commit status on the commit, not on the pull request. A pull request from
-a fork can have, as its head, a commit that is also the head of a branch in your
-repository: anyone can point a fork's branch at that commit and open a pull request. A
-status written for the fork's pull request would land on the shared commit and replace
-the one the branch's own pull request earned. `Review labels` is the plain case: the
-fork's pull request has no finding threads, so its pass would replace a failure.
+GitHub stores a commit status on the commit, not on the pull request. That matters when
+two pull requests share a head commit. Anyone can point a branch in their fork at the
+head of one of your branches and open a pull request from it. A status written for that
+pull request would replace the status your own pull request earned on the same commit.
 
-The rule: for a fork's pull request whose head is the head of at least one branch in the
-base repository, `labels.yml`, `review.yml` and `council.yml` (and
-`devloop council report --post`) write no status on that commit, pending or verdict.
-The run says why in a notice and succeeds, and the review does not run, so no key is
-used. A deleted fork counts as a fork. A pull request from the repository itself is
-never asked about, and behaves as before. When the check itself fails the run fails; it
-may still post a failure, which can never grant a pass.
+`Review labels` shows the risk. The fork's pull request has no review threads, so it
+passes, and that pass would replace a failure on yours.
 
-The limits:
+So devloop writes no status for a pull request from a fork when its head commit is also
+the head of a branch in your repository. This applies to `labels.yml`, `review.yml`,
+`council.yml` and `devloop council report --post`:
 
-- Such a fork pull request gets no status of its own, so it cannot merge where those
-  statuses are required. Push a new commit to it, or open it from a branch in the
-  repository.
-- The branches are read when the run starts. A branch pushed to the fork's head
-  afterwards, for example when a maintainer pushes a contributor's commit to a branch
-  unchanged, shares the statuses the fork's pull request already has on that commit.
-  Check them before relying on them, or add a commit.
-- The guard covers devloop's workflows only. Any other workflow that posts a status on
-  `pull_request_target` or review events needs the same check.
+- No status is written, neither pending nor a result. The log says why, and the job
+  succeeds.
+- The review does not run, so no key is used.
+- A fork that has been deleted still counts as a fork.
+- A pull request from your own repository is not checked and behaves as before.
+- If the check cannot be made, the job fails. It may still post a failure, which can
+  never let a pull request pass.
+
+Limits:
+
+- A fork's pull request in this state gets no status, so it cannot merge where those
+  statuses are required. Add a commit to it, or open it from a branch in the repository.
+- The branches are read when the job starts. If you later push a contributor's commit,
+  unchanged, to a branch of your own, that branch shares the statuses the fork's pull
+  request already has on the commit. Check them, or add a commit.
+- Only devloop's workflows have this check. Any other workflow that posts a status on
+  `pull_request_target` or on review events needs its own.
 
 ## Skills supply chain
 
