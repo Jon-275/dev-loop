@@ -82,8 +82,15 @@ def ruleset(number: int, *rules: dict[str, Any], **changes: object) -> dict[str,
 
 
 def pull_request(**parameters: object) -> dict[str, Any]:
-    """Return a ruleset's ``pull_request`` rule."""
-    return {"type": "pull_request", "parameters": parameters}
+    """Return a ruleset's ``pull_request`` rule: GitHub's parameters, changed as given."""
+    usual = {
+        "required_approving_review_count": 0,
+        "dismiss_stale_reviews_on_push": False,
+        "require_code_owner_review": False,
+        "require_last_push_approval": False,
+        "required_review_thread_resolution": False,
+    }
+    return {"type": "pull_request", "parameters": {**usual, **parameters}}
 
 
 def with_rulesets(answers: dict[str, Any], *rulesets: dict[str, Any]) -> dict[str, Any]:

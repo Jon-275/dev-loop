@@ -122,6 +122,17 @@ def _covers(ruleset: Mapping[str, Any], branch: str) -> bool | str:
     return named[0] and not named[1]
 
 
+def _well_formed(entry: object) -> bool:
+    """Return whether a ruleset's rule is a record with a type and, if any, parameters.
+
+    A rule such as ``deletion`` has no ``parameters`` key at all; a key that is there
+    must hold a record.
+    """
+    if not isinstance(entry, Mapping) or not isinstance(entry.get("type"), str):
+        return False
+    return "parameters" not in entry or isinstance(entry["parameters"], Mapping)
+
+
 def _rulesets(reader: Reader, repo: str, branch: str) -> tuple[tuple[Mapping[str, Any], ...], str]:
     """Return the rulesets that cover ``branch``, or the reason they could not all be read."""
     listing = reader.get(f"repos/{repo}/rulesets?per_page=100")
@@ -144,6 +155,8 @@ def _rulesets(reader: Reader, repo: str, branch: str) -> tuple[tuple[Mapping[str
         covers = _covers(data, branch)
         if isinstance(covers, str):
             return (), f"ruleset {number}: {covers}"
+        if covers and not all(_well_formed(entry) for entry in data["rules"]):
+            return (), f"ruleset {number}: GitHub's answer has a rule that is not a rule"
         if covers:
             found.append(data)
     return tuple(found), ""
@@ -209,21 +222,32 @@ def classic(facts: Facts, *keys: str, absent: bool, missing: bool | None = None)
 
 
 def rules(facts: Facts, kind: str) -> list[Mapping[str, Any]]:
-    """Return the parameters of every rule of type ``kind`` in the rulesets read."""
+    """Return the parameters of every rule of type ``kind`` in the rulesets read.
+
+    The rules were checked when they were read: each is a record, and so are its
+    parameters; a rule without parameters gives an empty record.
+    """
     return [
-        params if isinstance(params := rule.get("parameters"), Mapping) else {}
+        rule.get("parameters", {})
         for ruleset in facts.rulesets
         for rule in ruleset["rules"]
-        if isinstance(rule, Mapping) and rule.get("type") == kind
+        if rule["type"] == kind
     ]
 
 
 def rule(facts: Facts, kind: str, parameter: str = "") -> Seen:
-    """Return whether a ruleset has a rule of ``kind`` (with ``parameter`` true, if given)."""
+    """Return whether a ruleset has a rule of ``kind`` (with ``parameter`` true, if given).
+
+    A rule of that kind that does not say true or false for ``parameter`` is a reason.
+    """
     if facts.rulesets_reason:
         return Seen(reason=facts.rulesets_reason)
     found = rules(facts, kind)
-    return Seen(any(r.get(parameter) is True for r in found) if parameter else bool(found))
+    if not parameter:
+        return Seen(bool(found))
+    if not all(isinstance(params.get(parameter), bool) for params in found):
+        return Seen(reason=f"rulesets: a {kind} rule does not say {parameter}")
+    return Seen(any(params[parameter] for params in found))
 
 
 def either(*sources: Seen) -> Seen:
