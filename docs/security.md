@@ -76,7 +76,7 @@ passes, and that pass would replace a failure on yours.
 
 So devloop writes no status for a pull request from a fork when its head commit is also
 the head of a branch in your repository. This applies to `labels.yml`, `review.yml`,
-`council.yml` and `devloop council report --post`:
+`council.yml`, `gate.yml` and `devloop council report --post`:
 
 - No status is written, neither pending nor a result. The log says why, and the job
   succeeds.

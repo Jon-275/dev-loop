@@ -21,3 +21,6 @@ project = "devloop/skills"
 
 [labels]
 wait_for = ["Gemini review", "Reflection review"]
+
+[gate]
+control = ["docs/decisions/**"]   # decisions bind the code: a change to one is never in the light lane

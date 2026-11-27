@@ -1,0 +1,118 @@
+# The "Merge gate" status, shared by every project that uses devloop: the one answer to
+# "may this pull request merge, as far as the reviews go?" (`devloop gate`, docs/gate.md).
+# A pull request that changes only documents is in the light lane and waits for no
+# reviewer; any other needs every status and check of `[gate]` in devloop.toml on its
+# head. Require this one status in branch protection in place of one per reviewer.
+#
+# Call it as the last job of each workflow that posts what it reads, so it always sees
+# their newest result:
+#
+#   gate:
+#     needs: [labels]
+#     if: always()
+#     uses: Jon-275/dev-loop/.github/workflows/gate.yml@<tag>
+#     permissions: { checks: read, contents: read, pull-requests: read, statuses: write }
+#     with: { devloop: "git+https://github.com/Jon-275/dev-loop@<tag>" }
+#
+# Security: devloop and devloop.toml come from the default branch's checkout, never the
+# pull request's. The job reads the pull request, its statuses and its check runs through
+# the API and writes one commit status. It holds no secret.
+#
+# One writer of pending: devloop marks the head pending, and only after it has seen that
+# a status is due (an open pull request into the default branch, and not a fork's head
+# that a branch here also heads). No shell step here may post pending or success. A run
+# that fails once the head is known posts a failure, so an earlier success does not
+# outlive a run that could not check; a run that cannot even find the head is a failed
+# job with no status. That failure is the one unguarded post: it can never grant a pass.
+name: Merge gate
+
+on:
+  workflow_call:
+    inputs:
+      devloop:
+        description: Where to install devloop from (a uv requirement, or . in dev-loop itself)
+        required: true
+        type: string
+      pr:
+        description: The pull request number, when the event does not name one
+        required: false
+        type: string
+        default: ""
+
+permissions:
+  contents: read
+
+jobs:
+  gate:
+    name: Merge gate run
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      checks: read
+      contents: read
+      pull-requests: read
+      statuses: write
+    # One evaluation of a pull request at a time, in whichever workflow called this:
+    # devloop reads, then posts, so two runs at once could leave the older answer over
+    # the newer one. A run is never stopped part-way; while one runs, only the newest
+    # waiting run is kept, and it reads last.
+    concurrency:
+      group: merge-gate-${{ github.repository }}-${{ github.event.pull_request.number || inputs.pr }}
+      cancel-in-progress: false
+    env:
+      GITHUB_TOKEN: ${{ github.token }}
+      GH_TOKEN: ${{ github.token }}
+      PR_NUMBER: ${{ github.event.pull_request.number || inputs.pr }}
+      RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+    steps:
+      - name: Find the head commit
+        id: head
+        run: |
+          case "$PR_NUMBER" in
+            ''|*[!0-9]*) echo "::error title=Merge gate::PR_NUMBER must be a number"; exit 1 ;;
+          esac
+          # The head as it is now, not as the event saw it: a run that waited its turn
+          # judges the current head, and a failure must be reported on that commit.
+          sha="$(gh api "repos/${GITHUB_REPOSITORY}/pulls/${PR_NUMBER}" --jq .head.sha)"
+          case "$sha" in
+            *[!0-9a-f]*|'') echo "::error title=Merge gate::no head commit"; exit 1 ;;
+          esac
+          echo "sha=${sha}" >> "$GITHUB_OUTPUT"
+
+      - name: Check out the default branch (the code and settings that run)
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          ref: ${{ github.event.repository.default_branch }}
+          persist-credentials: false
+
+      - uses: astral-sh/setup-uv@1db35dd8eee11c5894872e0b383ae6c406cf738d # v10.4.0
+        with:
+          version: "0.13.7"
+          python-version: "3.12.14"
+          enable-cache: false
+
+      - name: Install devloop
+        env:
+          DEVLOOP: ${{ inputs.devloop }}
+        run: uv tool install "$DEVLOOP"
+
+      - name: Decide and post the status
+        id: gate
+        timeout-minutes: 5 # a hung step fails, so the step below still reports it
+        run: devloop gate --repo "$GITHUB_REPOSITORY" --pr "$PR_NUMBER" --run-url "$RUN_URL"
+
+      - name: Report a run that could not check
+        # devloop's exit code is not its verdict: it fails only when it could not check.
+        # devloop writes the status's name (gate.context) to its outputs before it reads
+        # anything; a run that broke before that reports under the default name.
+        # It reports on the head devloop judged (its sha output, written as soon as it
+        # knows the head), else on the head the first step found.
+        if: >-
+          failure() && (steps.gate.outputs.sha != '' || steps.head.outputs.sha != '')
+        env:
+          SHA: ${{ steps.gate.outputs.sha || steps.head.outputs.sha }}
+          CONTEXT: ${{ steps.gate.outputs.context || 'Merge gate' }}
+        run: >-
+          gh api "repos/${GITHUB_REPOSITORY}/statuses/${SHA}" -f state=failure
+          -f "context=${CONTEXT}" -f "description=The merge gate could not run; re-run it"
+          -f "target_url=${RUN_URL}"
