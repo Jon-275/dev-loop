@@ -14,6 +14,7 @@ from typing import Any
 
 import pytest
 import yaml
+from workflow_retry import GH_API
 
 WORKFLOWS = Path(__file__).resolve().parents[1] / ".github" / "workflows"
 RUN_URL = "${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
@@ -32,9 +33,9 @@ GUARD = {
         "HEAD_SHA": HEAD_SHA,
     },
     "run": (
-        "due=true\n"
+        GH_API + "due=true\n"
         'if [ "$HEAD_REPO" != "$GITHUB_REPOSITORY" ]; then\n'
-        '  shared="$(gh api "repos/${GITHUB_REPOSITORY}/commits/${HEAD_SHA}/branches-where-head"'
+        '  shared="$(gh_api "repos/${GITHUB_REPOSITORY}/commits/${HEAD_SHA}/branches-where-head"'
         ' --jq length)"\n'
         '  case "$shared" in\n'
         "    0) ;;\n"
@@ -63,7 +64,7 @@ WAITING = {
         "RUN_URL": RUN_URL,
     },
     "run": (
-        'gh api "repos/${GITHUB_REPOSITORY}/statuses/${HEAD_SHA}" \\\n'
+        GH_API + 'gh_api "repos/${GITHUB_REPOSITORY}/statuses/${HEAD_SHA}" \\\n'
         '  -f state=pending -f "context=${PROVIDER^} review" \\\n'
         '  -f "description=Waiting for a maintainer to add the ${APPROVAL_LABEL} label" \\\n'
         '  -f "target_url=${RUN_URL}"\n'
@@ -79,7 +80,7 @@ PENDING = {
         "RUN_URL": RUN_URL,
     },
     "run": (
-        'gh api "repos/${GITHUB_REPOSITORY}/statuses/${HEAD_SHA}" \\\n'
+        GH_API + 'gh_api "repos/${GITHUB_REPOSITORY}/statuses/${HEAD_SHA}" \\\n'
         '  -f state=pending -f "context=${PROVIDER^} review" \\\n'
         '  -f "description=Reviewing this commit" -f "target_url=${RUN_URL}"\n'
     ),
@@ -97,7 +98,7 @@ REPORT = {
         "RUN_URL": RUN_URL,
     },
     "run": (
-        'if [ "$OUTCOME" = "success" ] && [ "$DUE" = "true" ]; then\n'
+        GH_API + 'if [ "$OUTCOME" = "success" ] && [ "$DUE" = "true" ]; then\n'
         "  state=success\n"
         '  description="${DESCRIPTION:-Reviewed; resolve any finding threads before merge}"\n'
         'elif [ -n "$DESCRIPTION" ]; then\n'
@@ -107,7 +108,7 @@ REPORT = {
         "  state=failure\n"
         '  description="The review could not run; open the run for the reason"\n'
         "fi\n"
-        'gh api "repos/${GITHUB_REPOSITORY}/statuses/${HEAD_SHA}" \\\n'
+        'gh_api "repos/${GITHUB_REPOSITORY}/statuses/${HEAD_SHA}" \\\n'
         '  -f "state=${state}" -f "context=${PROVIDER^} review" \\\n'
         '  -f "description=${description}" -f "target_url=${RUN_URL}"\n'
     ),
@@ -117,13 +118,13 @@ LABELS_STEPS: list[dict[str, Any]] = [
         "name": "Check the pull request number and find its head",
         "id": "head",
         "run": (
-            'case "$PR_NUMBER" in\n'
+            GH_API + 'case "$PR_NUMBER" in\n'
             "  ''|*[!0-9]*) echo \"::error title=Review labels::PR_NUMBER must be a number\";"
             " exit 1 ;;\n"
             "esac\n"
             'sha="$HEAD_SHA"\n'
             'if [ -z "$sha" ]; then\n'
-            '  sha="$(gh api "repos/${GITHUB_REPOSITORY}/pulls/${PR_NUMBER}" --jq .head.sha)"\n'
+            '  sha="$(gh_api "repos/${GITHUB_REPOSITORY}/pulls/${PR_NUMBER}" --jq .head.sha)"\n'
             "fi\n"
             'echo "sha=${sha}" >> "$GITHUB_OUTPUT"\n'
         ),
@@ -159,10 +160,10 @@ LABELS_STEPS: list[dict[str, Any]] = [
         ),
         "env": {"SHA": "${{ steps.check.outputs.sha || steps.head.outputs.sha }}"},
         "run": (
-            'gh api "repos/${GITHUB_REPOSITORY}/statuses/${SHA}" -f state=failure '
-            '-f "context=Review labels" '
-            '-f "description=The labels check could not run; re-run it" '
-            '-f "target_url=${RUN_URL}"'
+            GH_API + 'gh_api "repos/${GITHUB_REPOSITORY}/statuses/${SHA}" -f state=failure \\\n'
+            '  -f "context=Review labels" '
+            '-f "description=The labels check could not run; re-run it" \\\n'
+            '  -f "target_url=${RUN_URL}"\n'
         ),
     },
 ]

@@ -48,12 +48,29 @@ jobs:
         # Two quick pushes both see the label; the second finds it gone, which is the
         # state wanted. Any other failure (permissions, an outage) fails the job.
         run: |
+          gh_api() {  # gh api; tried again after 2 s, then 4 s, on HTTP 429, a 5xx or a lost connection
+            local try out err
+            err="$(mktemp)"
+            for try in 1 2 3; do
+              if out="$(gh api "$@" 2>"$err")"; then
+                if [ -n "$out" ]; then printf '%s\n' "$out"; fi
+                return 0
+              fi
+              case "$(<"$err")" in
+                *"HTTP 429"* | *"HTTP 5"[0-9][0-9]* | *"error connecting to"* | *' "https://'*'": '*) ;;
+                *) break ;;
+              esac
+              if [ "$try" -lt 3 ]; then sleep "$((try * 2))"; fi
+            done
+            { printf '%s\n' "$out"; cat "$err"; } >&2
+            return 1
+          }
           case "$PR_NUMBER" in
             ''|*[!0-9]*) echo "::error title=Withdraw approval::no pull request number"; exit 1 ;;
           esac
           label="$(jq -rn --arg label "$APPROVAL_LABEL" '$label|@uri')"
           url="repos/${GITHUB_REPOSITORY}/issues/${PR_NUMBER}/labels/${label}"
-          if ! out="$(gh api -X DELETE "$url" 2>&1)"; then
+          if ! out="$(gh_api -X DELETE "$url" 2>&1)"; then
             case "$out" in
               *"HTTP 404"*) echo "The label was already removed." ;;
               *) echo "$out" >&2; exit 1 ;;

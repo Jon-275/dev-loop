@@ -16,13 +16,15 @@ from repo_helpers import (
     Fake,
     R,
     baseline,
+    on,
     pull_request,
     refused,
     ruleset,
     with_rulesets,
 )
 
-from devloop.repo_read import Facts, Read, Reader, read
+from devloop import repo_read as rr
+from devloop.repo_read import Facts, Read, Reader, Seen, read
 from devloop.review.github import Reply
 from devloop.review.model import ReviewError
 
@@ -136,7 +138,6 @@ def test_the_rulesets_that_cover_the_default_branch_are_read_whole() -> None:
         ruleset(12, target="tag"),
         ruleset(13, conditions={"ref_name": {"include": ["refs/heads/release/*"], "exclude": []}}),
         ruleset(14, conditions={"ref_name": {"include": ["~ALL"], "exclude": ["refs/heads/main"]}}),
-        ruleset(15, conditions={}),
     ]
     facts, _ = _read(with_rulesets(baseline(), *covering, *others))
     assert [found["id"] for found in facts.rulesets] == [7, 8, 9]
@@ -163,3 +164,119 @@ def test_rulesets_that_cannot_all_be_read_are_not_taken_for_none(
     facts, _ = _read({**answers, **change})
     assert facts.rulesets == ()
     assert reason in facts.rulesets_reason
+
+
+def _covered(include: list[str], exclude: list[str], branch: str = "team/api/v2") -> bool:
+    """Return whether a ruleset with these patterns is read as covering ``branch``."""
+    answers = baseline()
+    answers[R]["default_branch"] = branch
+    answers[f"{R}/branches/{branch.replace('/', '%2F')}/protection"] = answers.pop(PROTECTION)
+    rules = ruleset(7, conditions={"ref_name": {"include": include, "exclude": exclude}})
+    facts, _ = _read(with_rulesets(answers, rules))
+    assert facts.rulesets_reason == ""
+    return bool(facts.rulesets)
+
+
+@pytest.mark.parametrize(
+    ("pattern", "covers"),
+    [
+        ("refs/heads/team/api/v2", True),
+        ("refs/heads/*", False),  # one star stays inside one part of the name
+        ("refs/heads/team/*", False),
+        ("refs/heads/team/*/*", True),
+        ("refs/heads/team/*/v?", True),
+        ("refs/heads/**", True),
+        ("refs/heads/**/*", True),
+        ("refs/heads/**/v2", True),
+        ("refs/heads/team/**", True),
+        ("refs/heads/other/**", False),
+        ("refs/heads/team/api", False),
+        ("refs/tags/**", False),
+        ("~DEFAULT_BRANCH", True),
+        ("~ALL", True),
+    ],
+)
+def test_a_ruleset_pattern_matches_a_branch_as_github_matches_it(
+    pattern: str, covers: bool
+) -> None:
+    assert _covered([pattern], []) is covers
+    assert _covered(["~ALL"], [pattern]) is not covers
+    assert _covered(["refs/heads/nothing", pattern], ["refs/heads/nothing"]) is covers
+
+
+def test_one_star_covers_a_branch_with_a_one_part_name() -> None:
+    assert _covered(["refs/heads/*"], [], "main") and _covered(["refs/heads/ma*"], [], "main")
+
+
+@pytest.mark.parametrize(
+    ("change", "reason"),
+    [
+        ({"target": None}, "ruleset 7: GitHub's answer has no target or no enforcement"),
+        ({"enforcement": None}, "ruleset 7: GitHub's answer has no target or no enforcement"),
+        ({"enforcement": 1}, "ruleset 7: GitHub's answer has no target or no enforcement"),
+        ({"conditions": None}, "ruleset 7: GitHub's answer has no conditions.ref_name.include"),
+        ({"conditions": {}}, "ruleset 7: GitHub's answer has no conditions.ref_name.include"),
+        (
+            {"conditions": {"ref_name": {"exclude": []}}},
+            "ruleset 7: GitHub's answer has no conditions.ref_name.include",
+        ),
+        (
+            {"conditions": {"ref_name": {"include": ["~ALL"]}}},
+            "ruleset 7: GitHub's answer has no conditions.ref_name.exclude",
+        ),
+        (
+            {"conditions": {"ref_name": {"include": "~ALL", "exclude": []}}},
+            "ruleset 7: GitHub's answer has no conditions.ref_name.include",
+        ),
+        (
+            {"conditions": {"ref_name": {"include": ["~ALL"], "exclude": [7]}}},
+            "ruleset 7: GitHub's answer has no conditions.ref_name.exclude",
+        ),
+    ],
+)
+def test_a_ruleset_that_cannot_be_placed_is_not_taken_for_one_that_does_not_apply(
+    change: dict[str, Any], reason: str
+) -> None:
+    made = ruleset(7, {"type": "deletion"}, **change)
+    for key, new in change.items():
+        if new is None:
+            del made[key]
+    facts, _ = _read(with_rulesets(baseline(), made, ruleset(8)))
+    assert (facts.rulesets, facts.rulesets_reason) == ((), reason)
+    assert rr.rule(facts, "deletion") == Seen(reason=reason)
+
+
+def test_a_ruleset_for_tags_or_one_not_enforced_needs_no_conditions() -> None:
+    quiet = [ruleset(7, target="tag", conditions={}), ruleset(8, enforcement="disabled")]
+    del quiet[1]["conditions"]
+    facts, _ = _read(with_rulesets(baseline(), *quiet))
+    assert (facts.rulesets, facts.rulesets_reason) == ((), "")
+
+
+def test_a_rule_is_read_from_classic_protection_and_from_the_rulesets() -> None:
+    made = ruleset(7, {"type": "deletion"}, pull_request(require_code_owner_review=True))
+    facts, _ = _read(with_rulesets(baseline(), made))
+    assert rr.classic(facts, "allow_deletions", "enabled", absent=True) == Seen(False)
+    assert rr.classic(facts, "no_such", "enabled", absent=True).reason.endswith("no_such.enabled")
+    assert rr.classic(facts, "no_such", "enabled", absent=True, missing=False) == Seen(False)
+    assert rr.rule(facts, "deletion") == Seen(True)
+    assert rr.rule(facts, "non_fast_forward") == Seen(False)
+    assert rr.rule(facts, "pull_request", "require_code_owner_review") == Seen(True)
+    assert rr.rule(facts, "pull_request", "required_review_thread_resolution") == Seen(False)
+    assert rr.rules(facts, "deletion") == [{}]
+    assert rr.value(facts.reporting, bool, "enabled") == Seen(True)
+    assert "no enabled (hint)" in rr.value(facts.workflow, bool, "enabled", hint=" (hint)").reason
+    bare, _ = _read({**baseline(), PROTECTION: NOT_PROTECTED})
+    assert rr.classic(bare, "allow_deletions", "enabled", absent=True) == Seen(True)
+    refused_, _ = _read({**baseline(), PROTECTION: refused(403, "No"), ACTIONS: on(True)})
+    why = rr.classic(refused_, "allow_deletions", "enabled", absent=True).reason
+    assert why.startswith("branch protection: HTTP 403")
+
+
+def test_a_rule_is_there_when_either_source_makes_it_and_absent_only_when_both_say_so() -> None:
+    yes, no, unknown = Seen(True), Seen(False), Seen(reason="HTTP 403")
+    assert rr.either(no, yes) == rr.either(unknown, yes) == yes
+    assert rr.either(no, no) == no
+    assert rr.either(no, unknown) == unknown
+    assert rr.either(unknown, Seen(reason="x")) == Seen(reason="HTTP 403; x")
+    assert rr.opposite(yes) == no and rr.opposite(unknown) == unknown
