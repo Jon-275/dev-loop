@@ -139,4 +139,6 @@ The gate reads this table from the default branch, never from the pull request.
 | `max_light_files` | `100` | The most files a light pull request may change; more is strict. |
 
 `statuses` and `checks` cannot both be empty, a name can appear once across the two, and
-neither they nor `light_blocks` can name the gate's own status.
+neither they nor `light_blocks` can name the gate's own status. `context` cannot be a status
+another devloop job posts: `Review labels`, `Council review`, a reviewer's
+`<Name> review` or a `labels.wait_for` status.
