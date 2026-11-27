@@ -27,6 +27,10 @@ A pull request is in the **light lane** when every changed file is a document:
 
 The light lane waits for no reviewer.
 
+So light-lane files merge without a model review. Markdown and SVG can hold raw HTML or
+script. If the project publishes its docs, read such changes from outside authors as you
+would read code.
+
 Everything else is in the **strict lane**. A strict pull request needs every status in
 `gate.statuses` and every check in `gate.checks` to have passed on its head commit.
 
@@ -59,13 +63,14 @@ opens the change again from a branch of the repository.
 ## Who is trusted
 
 - The owner, members and collaborators, as GitHub reports the author's association.
-- A bot account listed in `gate.trusted_bots` (Dependabot by default).
+- A bot account listed in `gate.trusted_bots` (Dependabot by default), when the pull
+  request comes from a branch of the repository itself.
 - The workflow account `github-actions[bot]`, when the pull request comes from a branch
   of the repository itself.
 
 Trust changes two things. A change to a control file can pass only for a trusted author.
-A check an app skipped passes for a trusted author; for anyone else the gate keeps
-waiting for a real run.
+A check that ended as `skipped` or `neutral` passes for a trusted author. For anyone
+else the gate keeps waiting for a run that ends as `success`.
 
 ## The verdict
 
@@ -85,6 +90,13 @@ The gate posts nothing for a closed pull request, for one into another branch th
 default one, or for a fork's pull request whose head commit is also the head of a branch
 in the repository ([a status belongs to a commit](security.md#a-status-belongs-to-a-commit)).
 Only a run that breaks posts a `failure` there.
+
+One limit is known. The guard covers a head that a branch in the repository has. It does
+not cover two pull requests from forks. A member opens a pull request from a fork. An
+outside author opens another pull request on the same head commit. The outside pull
+request's verdict lands on that commit and can turn its status to `failure`. It can never
+turn it green. If that happens, run the gate again for the member's pull request, or push
+a commit to it.
 
 ## What it trusts
 
@@ -140,11 +152,19 @@ The next push runs the gate, and so does a manual run.
    pull request. Nothing requires it yet.
 2. **Compare it.** On real pull requests, check the gate against the statuses it will
    replace: a strict pull request before and after its reviews pass, a pull request of
-   documents only, and one from a fork. The gate must be `success` only when each of
+   documents only, one from a fork, and one whose branch was updated from the base
+   ("Update branch"), because the completeness check compares the number of commits.
+   The gate must be `success` only when each of
    those statuses would let the pull request merge.
 3. **Require it.** In branch protection, require `Merge gate` and remove the reviewers'
    statuses and `Review labels` from the required list. They still decide every strict
    pull request, through the gate. Keep the code checks required.
 
-If you set `gate.context`, require that name instead. One limit: a run that breaks before
-devloop starts reports its `failure` as `Merge gate`, not under the new name.
+Require the status only on the default branch. The gate gives no verdict for a pull
+request into another branch. Its head commit shows a gate status only when that commit
+also heads a pull request into the default branch, and then it shows that one's status.
+
+If you set `gate.context`, require that name instead. One limit: when the run
+breaks before devloop has read its settings (devloop could not be installed, `devloop.toml`
+is not valid, or there is no token), the `failure` is reported as `Merge gate`. A status
+under the new name is left as it was.
