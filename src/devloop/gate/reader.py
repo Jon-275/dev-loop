@@ -42,6 +42,7 @@ from devloop.review.labels import write_outputs
 #: A list from the API is read to at most this many pages of 100.
 MAX_PAGES = 30
 _REPO = re.compile(r"[\w.-]+/[\w.-]+")
+_SHA = re.compile(r"[0-9a-f]{40,64}")
 
 
 class GitHub(Protocol):
@@ -171,7 +172,7 @@ def _verdict(
     return rules.decide(found, trusted=trusted, needed=needed, blocking=blocking), lines
 
 
-def evaluate(hub: GitHub, repo: str, number: int, gate: Gate) -> int:
+def evaluate(hub: GitHub, repo: str, number: int, gate: Gate, *, outputs: str = "") -> int:
     """Judge pull request ``number`` of ``repo`` and post the verdict; return the exit code.
 
     0 when a verdict was posted, or none is due (a closed pull request, another base
@@ -180,6 +181,10 @@ def evaluate(hub: GitHub, repo: str, number: int, gate: Gate) -> int:
     reviews are read once more and the verdict posted again if it changed. That narrows
     the time in which a slow run can leave an older answer over a newer one; the
     workflow closes it by running one evaluation of a pull request at a time.
+
+    The head judged is written to ``outputs`` (``$GITHUB_OUTPUT``) as ``sha`` as soon as
+    it is known, before any later read can fail, so the workflow reports a run that
+    broke on this commit.
 
     Raises:
         FeedbackError: the pull request could not be read or names no head commit, or a
@@ -190,10 +195,11 @@ def evaluate(hub: GitHub, repo: str, number: int, gate: Gate) -> int:
     if not isinstance(pull, dict):
         raise fb.FeedbackError("the pull request could not be read")
     sha = _field(pull, "head", "sha")
-    if not isinstance(sha, str) or not sha:
+    if not isinstance(sha, str) or not _SHA.fullmatch(sha):
         raise fb.FeedbackError("the pull request names no head commit")
     posted: rules.Verdict | None = None
     try:
+        write_outputs(outputs, sha=sha)
         state, ref = _field(pull, "state"), _field(pull, "base", "ref")
         default = _field(pull, "base", "repo", "default_branch")
         if not all(isinstance(value, str) and value for value in (state, ref, default)):
@@ -242,12 +248,17 @@ def main(root: Path, repo: str, number: int, run_url: str, env: Mapping[str, str
     """Run the gate for one pull request; 2 when it cannot start, 1 when it could not check.
 
     The status's name is written to ``$GITHUB_OUTPUT`` as ``context`` before anything is
-    read, so the workflow can report a run that broke under the same name.
+    read from GitHub, so the workflow can report a run that broke under the same name.
+    Settings that cannot be read and outputs that cannot be written are start-up errors.
     """
+    outputs = env.get("GITHUB_OUTPUT", "")
     try:
         gate = rules.rules(load_config(root / CONFIG_FILE))
     except ConfigError as error:
         print(f"devloop gate: {error}", file=sys.stderr)
+        return 2
+    except (OSError, UnicodeDecodeError):
+        print(f"devloop gate: {CONFIG_FILE} could not be read", file=sys.stderr)
         return 2
     token = env.get("GITHUB_TOKEN", "")
     if not token or not _REPO.fullmatch(repo) or number <= 0:
@@ -256,9 +267,14 @@ def main(root: Path, repo: str, number: int, run_url: str, env: Mapping[str, str
             file=sys.stderr,
         )
         return 2
-    write_outputs(env.get("GITHUB_OUTPUT", ""), context=gate.context)
     try:
-        return evaluate(Api(token, repo, gate.context, run_url), repo, number, gate)
+        write_outputs(outputs, context=gate.context)
+    except OSError:
+        print("devloop gate: GITHUB_OUTPUT could not be written", file=sys.stderr)
+        return 2
+    try:
+        api = Api(token, repo, gate.context, run_url)
+        return evaluate(api, repo, number, gate, outputs=outputs)
     except fb.FeedbackError as error:
         print(f"devloop gate: could not check: {error}", file=sys.stderr)
         return 1
