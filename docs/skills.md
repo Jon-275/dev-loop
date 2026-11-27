@@ -12,6 +12,7 @@ frontmatter, names no agent-specific tool, runs its commands through `devloop`, 
 | `pr-workflow` | take one change from a fresh branch to a merged pull request |
 | `split-stack` | plan a change over the size limit as a stack of small PRs |
 | `stateful-change` | write states, identities and invariants, then the end-state test, then the code |
+| `validate-model-change` | choose independent model evidence, exercise freshness and boundaries, and check saved results and release claims |
 | `review-locally` | run the model reviewers on the branch before pushing |
 | `address-review` | work through one review round and push once |
 | `decision-record` | record an owner's decision in `docs/decisions/` |

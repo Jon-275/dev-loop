@@ -31,6 +31,10 @@ them. The design comes first, so the test can.
 6. **Errors:** never turn a failed read into "empty" or "healthy", and never record a
    lasting verdict from a read that failed.
 
+## Persisted model results
+
+For a projection with a cached result and an input revision, change one active input and inject the previous result under the new run. Choose an independent comparison that exposes a plausible but obsolete value. Verify the eligible result identity includes the material inputs and relevant model version. An interrupted run must leave the last complete batch intact, expose the correct freshness state, and allow a retry to publish a fresh result. Reconcile the saved or published artifact so an in-memory pass cannot hide a stale result seen by users.
+
 ## When not to use
 
 - Stateless code, docs or tests alone: use `pr-workflow`.

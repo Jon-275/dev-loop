@@ -32,7 +32,10 @@ that file exists, and a general code-review lens otherwise.
   says which reviewers each tier gets. A reviewer that a tier does not route to passes,
   and its status says so. With no `review.providers`, every reviewer reviews every tier.
 - `review.files` names the file types a reviewer reads. A pull request that changes none
-  of them passes without a request.
+  of them passes without a request. Workbook projects can include `*.bas` and
+  `*.fragment` alongside their other source patterns to cover checked-in macro source.
+  The configured list replaces the defaults. Verify generated workbook files through
+  the project's artifact checks.
 
 Nothing is hidden: the summary names every finding that got no thread and why (an
 earlier thread, another reviewer's thread, review feedback, below the blocking

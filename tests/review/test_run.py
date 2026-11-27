@@ -125,6 +125,16 @@ def test_a_pull_request_with_no_reviewed_file_types_asks_nothing(repo: Path) -> 
     assert review.posted == []
 
 
+def test_workbook_macro_sources_reach_review_when_configured(repo: Path) -> None:
+    """A workbook repository can include macro text while excluding the binary artifact."""
+    macro_paths = ["tools/vba/RunModel.bas", "tools/vba/tests/Runner.fragment"]
+    review = Run(repo, [*macro_paths, "workbook/model.xlsm"], lambda p, e: _reply())
+    review(r.Policy(files=(*REVIEWED_FILES, "*.bas", "*.fragment")))
+    [(prompt, _)] = review.asked
+    assert sorted(_files_in(prompt)) == macro_paths
+    assert "workbook/model.xlsm" in prompt.split("=== GIT DIFF ===", 1)[0]
+
+
 def test_a_missing_key_fails_the_check_by_name(repo: Path) -> None:
     review = Run(repo, ["app.py"], lambda p, e: _reply())
     with pytest.raises(ReviewError, match="TESTBOT_API_KEY is not available"):
