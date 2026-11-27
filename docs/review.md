@@ -61,8 +61,9 @@ and a push that only merges the base branch is not reviewed again.
 
 ### Outside pull requests
 
-A review spends the project's key and sends the pull request's text to the reviewer. A
-public project can keep both for people it trusts by passing `gate: members`:
+A review spends the project's key and sends the pull request's text to the reviewer. By
+default both are kept for people the project trusts (`gate: members`). A pull request
+from anyone else waits until a maintainer has looked at it and added a label.
 
 ```yaml
 on:
@@ -70,28 +71,30 @@ on:
     types: [opened, synchronize, reopened, ready_for_review, labeled]
 
 jobs:
+  unapprove:
+    uses: Jon-275/dev-loop/.github/workflows/unapprove.yml@<tag>
+    permissions: { pull-requests: write }
+
   gemini:
     uses: Jon-275/dev-loop/.github/workflows/review.yml@<tag>
     permissions: { contents: read, pull-requests: write, statuses: write }
     with:
       provider: gemini
       devloop: "git+https://github.com/Jon-275/dev-loop@<tag>"
-      gate: members
     secrets: { api_key: "${{ secrets.GEMINI_API_KEY }}" }
 ```
 
 | Author | What happens |
 |---|---|
-| The owner, a member or a collaborator | Reviewed on every push, as without the gate |
+| The owner, a member or a collaborator | Reviewed on every push |
 | A login in `trusted_bots` (default `dependabot[bot]`) | The same |
 | Anyone else | The status is pending, "Waiting for a maintainer to add the ai-review-approved label". Adding the label reviews the head it was added to, once |
 
 Three things to know:
 
-- **Approval covers one head.** A push after the label is a new head and waits again. So
-  that a maintainer can approve it, remove the label on every push; a small job on
-  `pull_request_target` `synchronize` with `pull-requests: write` and no checkout does it.
-  Look at the new commits before adding the label again.
+- **Approval covers one head.** A push after the label is a new head and waits again.
+  `unapprove.yml` removes the label on every push, so a maintainer can add it again.
+  Look at the new commits first.
 - **Trigger on `labeled`.** Without it the label starts nothing. Adding any other label
   changes nothing: it is not reviewed again and no status is touched. If the calling
   workflow cancels older runs of the same pull request, leave such label events out of
@@ -106,8 +109,12 @@ Over it, nothing is sent and the status says so; review it by hand, ask for a sm
 pull request, or raise the limit.
 
 The decision is made in a job that holds no key and reads only what GitHub sets on the
-event. `approval_label` and `trusted_bots` rename the label and the trusted logins. An
-unknown `gate` value fails the run and reviews nothing.
+event. `approval_label` and `trusted_bots` rename the label and the trusted logins; pass
+the same `approval_label` to `unapprove.yml`.
+
+**To review everyone at once**, pass `gate: everyone`. That suits a private project
+whose authors are all trusted. On a public project it lets any account spend the key.
+Any other `gate` value, an empty one included, fails the run and reviews nothing.
 
 ### Secrets are not sent
 

@@ -1,6 +1,8 @@
 """The shared workflows: pinned actions, least privilege, and the jobs main-health waits on."""
 
+import os
 import re
+import subprocess
 from pathlib import Path
 from typing import Any
 
@@ -167,7 +169,7 @@ def test_dev_loop_reviews_itself_on_pull_request_target_from_the_base_branch() -
     for name in ("gemini", "reflection"):
         job = caller["jobs"][name]
         assert job["uses"] == "./.github/workflows/review.yml"
-        assert job["with"] == {"provider": name, "devloop": ".", "gate": "members"}
+        assert job["with"] == {"provider": name, "devloop": "."}  # the default gate: members
     labels = caller["jobs"]["labels"]
     assert labels["uses"] == "./.github/workflows/labels.yml" and "always()" in labels["if"]
     assert sorted(labels["needs"]) == ["gemini", "reflection"]
@@ -181,45 +183,99 @@ def test_an_outside_pull_request_here_waits_for_a_maintainer_s_label() -> None:
     keyed = [name for name, job in caller["jobs"].items() if "secrets" in job]
     assert sorted(keyed) == ["gemini", "reflection"]
     for name in keyed:
-        assert caller["jobs"][name]["with"]["gate"] == "members"
-        assert "approval_label" not in caller["jobs"][name]["with"]  # the default, as below
-
-
-def test_a_push_withdraws_the_approval_without_a_key_or_a_checkout() -> None:
-    """Approval covers one head, so the label goes when the head changes."""
-    job = _load("review-trusted.yml")["jobs"]["unapprove"]
-    assert job == {
-        "name": "Withdraw approval on a new push",
-        "if": "github.event.action == 'synchronize' && "
-        "contains(github.event.pull_request.labels.*.name, 'ai-review-approved')",
-        "runs-on": "ubuntu-24.04",
-        "timeout-minutes": 5,
+        assert "gate" not in caller["jobs"][name]["with"]  # so the default applies
+    assert _on(_load("review.yml"))["workflow_call"]["inputs"]["gate"]["default"] == "members"
+    assert caller["jobs"]["unapprove"] == {
+        "uses": "./.github/workflows/unapprove.yml",
         "permissions": {"pull-requests": "write"},
-        "steps": [
-            {
-                "name": "Remove the approval label",
-                "env": {
-                    "GH_TOKEN": "${{ github.token }}",
-                    "PR_NUMBER": "${{ github.event.pull_request.number }}",
-                },
-                "run": 'if ! out="$(gh api -X DELETE "repos/${GITHUB_REPOSITORY}/issues/'
-                '${PR_NUMBER}/labels/ai-review-approved" 2>&1)"; then\n'
-                '  case "$out" in\n'
-                '    *"HTTP 404"*) echo "The label was already removed." ;;\n'
-                '    *) echo "$out" >&2; exit 1 ;;\n'
-                "  esac\n"
-                "fi\n",
-            }
-        ],
     }
     # No keyed job waits for it: on a push the gate never reads the label, so an outside
     # pull request waits whether or not the label is still there.
-    caller = _load("review-trusted.yml")
     assert all("unapprove" not in job.get("needs", []) for job in caller["jobs"].values())
     decide = _load("review.yml")["jobs"]["gate"]["steps"][0]
     assert "labels" not in str(decide["env"]).lower().replace("approval_label", "")
-    shared = _on(_load("review.yml"))["workflow_call"]["inputs"]["approval_label"]
-    assert shared["default"] == "ai-review-approved"
+
+
+UNAPPROVE = """case "$PR_NUMBER" in
+  ''|*[!0-9]*) echo "::error title=Withdraw approval::no pull request number"; exit 1 ;;
+esac
+label="$(jq -rn --arg label "$APPROVAL_LABEL" '$label|@uri')"
+url="repos/${GITHUB_REPOSITORY}/issues/${PR_NUMBER}/labels/${label}"
+if ! out="$(gh api -X DELETE "$url" 2>&1)"; then
+  case "$out" in
+    *"HTTP 404"*) echo "The label was already removed." ;;
+    *) echo "$out" >&2; exit 1 ;;
+  esac
+fi
+"""
+
+
+def test_a_push_withdraws_the_approval_without_a_key_or_a_checkout() -> None:
+    """Approval covers one head, so the shared job removes the label when the head changes."""
+    shared = _load("unapprove.yml")
+    label = _on(shared)["workflow_call"]["inputs"]["approval_label"]
+    review = _on(_load("review.yml"))["workflow_call"]["inputs"]["approval_label"]
+    assert label["default"] == review["default"] == "ai-review-approved"
+    assert shared["permissions"] == {"contents": "read"}
+    assert shared["jobs"] == {
+        "unapprove": {
+            "name": "Withdraw approval on a new push",
+            "if": "github.event.action == 'synchronize' && "
+            "contains(github.event.pull_request.labels.*.name, inputs.approval_label)",
+            "runs-on": "ubuntu-24.04",
+            "timeout-minutes": 5,
+            "permissions": {"pull-requests": "write"},
+            "steps": [
+                {
+                    "name": "Remove the approval label",
+                    "env": {
+                        "GH_TOKEN": "${{ github.token }}",
+                        "PR_NUMBER": "${{ github.event.pull_request.number }}",
+                        "APPROVAL_LABEL": "${{ inputs.approval_label }}",
+                    },
+                    "run": UNAPPROVE,
+                }
+            ],
+        }
+    }
+
+
+@pytest.mark.parametrize(
+    ("code", "said", "expected"),
+    [
+        (0, "", 0),
+        (1, "gh: Label does not exist (HTTP 404)", 0),
+        (1, "gh: Resource not accessible by integration (HTTP 403)", 1),
+        (1, "gh: Server Error (HTTP 502)", 1),
+    ],
+)
+def test_removing_a_label_that_is_gone_succeeds_and_any_other_failure_fails(
+    tmp_path: Path, code: int, said: str, expected: int
+) -> None:
+    """Two quick pushes both try; the second must not turn the workflow red."""
+    fake = tmp_path / "gh"
+    fake.write_text(f"#!/bin/sh\necho \"$*\" > '{tmp_path}/args'\necho '{said}' >&2\nexit {code}\n")
+    fake.chmod(0o755)
+    env = {
+        "PATH": f"{tmp_path}{os.pathsep}{os.environ['PATH']}",
+        "GITHUB_REPOSITORY": "o/r",
+        "PR_NUMBER": "7",
+        "APPROVAL_LABEL": "needs review/ok",
+    }
+    done = subprocess.run(
+        ["bash", "-e", "-c", UNAPPROVE], env=env, capture_output=True, check=False
+    )
+    assert done.returncode == expected, done.stderr
+    assert "repos/o/r/issues/7/labels/needs%20review%2Fok" in (tmp_path / "args").read_text()
+
+
+def test_the_label_job_refuses_an_event_with_no_pull_request(tmp_path: Path) -> None:
+    """A caller on the wrong event gets an error, not a request for another path."""
+    env = {"PATH": os.environ["PATH"], "GITHUB_REPOSITORY": "o/r", "PR_NUMBER": ""}
+    done = subprocess.run(
+        ["bash", "-e", "-c", UNAPPROVE], env=env, capture_output=True, check=False
+    )
+    assert done.returncode == 1 and b"no pull request number" in done.stdout
 
 
 def test_the_labels_check_posts_from_devloop_and_reports_a_run_that_posted_nothing() -> None:
