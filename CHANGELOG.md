@@ -12,6 +12,56 @@
 
 ### Security
 
+## 0.13.0 - 2026-11-27
+
+### Breaking changes
+
+### Added
+
+- **`enforce_admins` is judged per source.** `devloop doctor --repo` says administrators are held to the rules only when classic protection and every ruleset that supplies an expected rule hold them. A ruleset that requires the checks but lets administrators bypass it now differs, and the line names it.
+- **`devloop doctor --repo OWNER/NAME` checks the repository's GitHub settings.** It reads the live settings (branch protection and rulesets, the Actions permissions, secret scanning, merge methods and more) and compares them with `[github]` in `devloop.toml`. Each setting is ok, differs (expected and found) or not judged (with the reason, such as a token without admin rights). A branch rule counts when classic protection or a ruleset makes it, for administrators too. It only reads. The exit code is 1 when something differs and 3 when something could not be judged; `--json` prints records. See docs/github-settings.md.
+- **`gate.yml` takes the status's name as a `context` input.** It defaults to `Merge gate` and must be the same as `gate.context`; `devloop gate --context` refuses to start when they differ. A run that breaks at any point reports under that name, where before a run that broke before devloop read its settings reported as `Merge gate`. Runs queue per name, so a second gate can be reported beside another status of the default name without sharing its queue or its failure reports.
+- **A `[github]` table in `devloop.toml`.** It holds the repository settings a project expects on GitHub (required checks, a pull request before merging, administrators, force pushes, the workflow token, secret scanning, merge methods and more). The defaults are the baseline of `docs/github-settings.md`, and any key can be `"skip"`. `devloop doctor --repo` will read it.
+- **A GitHub settings baseline.** `docs/github-settings.md` lists the repository settings devloop's checks rely on in one table: the value, the reason, where it is set and the API field that shows it. It also says what it leaves out for a one-maintainer project, and why.
+- Add opt-in shared validation and size workflows so label changes remeasure size without replacing required code and validation results.
+- **dev-loop's releases are tagged and published by a workflow.** When a push to main changes the version in `pyproject.toml` to one that has no tag, and `CHANGELOG.md` has that version's `## <version> - <date>` section, `.github/workflows/release.yml` creates the tag `v<version>` on that commit and publishes a release with the section as its notes. It does nothing on any other push, never moves a tag, and fails without creating anything when the section is missing or the version is not `X.Y.Z`. Two commands hold the decision: `devloop release-notes [--version X.Y.Z]` prints a version's changelog section, and `devloop release-due` answers for the current commit. The `release` skill now says to let the workflow tag, and how to publish by hand when it fails.
+- **`review.max_rounds`: a cap on reviews per pull request.** Each push re-runs every
+  reviewer, and nothing limited how often. With `max_rounds` set, once a reviewer has
+  posted that many reviews on a pull request the next run sends nothing to the model and
+  its status fails with "Not reviewed: cap of N reviews reached": never a pass, never a
+  silent skip. A maintainer adds the `review-again` label (`review.yml`'s new
+  `again_label` input) for one more review; on an outside pull request the approval
+  label is still needed first. A round is a review the workflow account posted, so an
+  author cannot forge or reset the count. The default, `0`, is no cap and changes
+  nothing. `docs/cost.md` now says plainly that devloop has no spend budget.
+- **`settings-check.yml`, a shared workflow that checks the repository's settings on a schedule.** It runs `devloop doctor --repo` and keeps one issue, "Repository settings differ from devloop.toml": opened or updated with the report when a setting differs or was not judged, closed when a later run is clean. It may read the repository and write issues, nothing else. An optional `token` secret lets it read admin settings; without it those are reported as not judged. dev-loop calls it weekly. One run per repository works on the issue at a time, and its calls to GitHub retry a transient failure as the other shared workflows do. Creating the issue is never sent again without first looking whether it is there, so a lost reply cannot open a second one.
+- **A read-only reader of a repository's GitHub settings.** It reads the repository, the default branch's protection, the rulesets that cover it, the Actions permissions and private vulnerability reporting, with GET calls only and the retries every devloop call has. An answer GitHub refuses keeps its reason, so `devloop doctor --repo` can report that setting as not judged. A ruleset's branch patterns are matched as GitHub matches them (`*` stays inside one part of the name, `**` crosses `/`), and a ruleset that cannot be placed is a reason, not "does not apply".
+- **A page on writing a status check.** `docs/status-checks.md` lists the twelve rules a workflow that posts a required commit status must follow, each with the failure it prevents and a link to where this repository does it: guard before any write, one writer of pending, "could not check" is a failure, one run at a time, judge the current head, trusted code only, decide from the changed files, count only the expected account's signals, pin the whole job in a test, roll out in three steps, two facts about events, and check exit codes.
+
+### Changed
+
+- **The GitHub API requests of `devloop labels` and `devloop gate` are counted and pinned.**
+  Each reply on a review thread starts both, and the workflow token may make 1,000 REST
+  requests per repository per hour. Tests now pin the requests one evaluation makes (7
+  for the labels check; 12 for the gate with two statuses and one check), so a change
+  that adds a read fails a test. `docs/cost.md` lists the counts under "GitHub API reads
+  per run", with the arithmetic for a busy pull request. No read was removed: each one
+  is a guard or a second read that closes a race.
+- **`review-locally` and `pr-workflow` say how to check your own work.** `review-locally`: the reviewer must not have seen the author's reasoning (a fresh agent or session given the diff and the rules, not the conclusion), and the second pass covers only the commits since the first and re-runs the earlier probes. `pr-workflow`: before opening, revert the fix in a scratch copy and watch the new test fail, and look at what a user would see (the page, the command, the report); run each gate so its own exit code is seen, never through a filter. Run `devloop sync` after upgrading to get the new text.
+
+### Fixed
+
+- **The docs match the code again, and a test keeps two lists true.** README and the adoption page now list every shared workflow (`unapprove.yml`, `labels.yml`, `gate.yml`, `council.yml` and `metrics.yml` were missing from one or both) and README lists every command (`devloop bench` and `devloop council report` were missing); `tests/test_docs_lists.py` fails when either list differs from the workflow files or the parser. The security page no longer says secrets are sent unchecked: the review refuses to send text that holds a likely secret, though it does not redact, and outside pull requests wait for approval. The upgrade page's `framework.version` example no longer names an old version.
+- **The shared workflows' own GitHub calls retry a transient failure.** One HTTP 502 from
+  GitHub turned a job red, and in a step that writes a status it could leave a wrong
+  status standing. Every `gh api` call in `review.yml`, `gate.yml`, `labels.yml` and
+  `unapprove.yml` now goes through one small shell function, repeated in each step: up to
+  three tries, waiting 2 then 4 seconds, on HTTP 429, a 5xx or a lost connection. A 403,
+  404 or 422 is never retried. The status guard still fails closed when its read fails
+  after the tries, and `unapprove.yml` still treats a 404 as success.
+
+### Security
+
 ## 0.12.0 - 2026-11-27
 
 ### Breaking changes

@@ -1,1 +1,0 @@
-- **A GitHub settings baseline.** `docs/github-settings.md` lists the repository settings devloop's checks rely on in one table: the value, the reason, where it is set and the API field that shows it. It also says what it leaves out for a one-maintainer project, and why.

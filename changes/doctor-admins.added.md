@@ -1,1 +1,0 @@
-- **`enforce_admins` is judged per source.** `devloop doctor --repo` says administrators are held to the rules only when classic protection and every ruleset that supplies an expected rule hold them. A ruleset that requires the checks but lets administrators bypass it now differs, and the line names it.
