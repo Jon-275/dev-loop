@@ -24,7 +24,8 @@ Pin each call to a release tag or commit. Each workflow's header shows the job t
 
 | Workflow | Trigger in the caller | What it does |
 |---|---|---|
-| `pr-hygiene.yml` | `pull_request` | doctor, size, changelog, docs-only detection |
+| `pr-hygiene.yml` | `pull_request` | advisory doctor, size, changelog, docs-only detection |
+| `drift-check.yml` | separate `pull_request` workflow on code and review lifecycle events | repository drift verdict for branch protection |
 | `review.yml` | `pull_request_target` | one job per model reviewer ([model reviews](review.md)) |
 | `labels.yml` | after the review jobs, and on review replies | the `Review labels` status |
 | `main-health.yml` | `push` to the default branch, last job | opens and closes a "main is red" issue |
@@ -47,12 +48,25 @@ No workflow needs a personal access token.
 On the default branch, require a pull request, conversation resolution, and these
 statuses:
 
-- the caller's code checks and `hygiene / devloop doctor`;
+- the caller's code checks and its dedicated repository drift check;
 - `<Name> review` for each model reviewer (for example `Gemini review`);
 - `Review labels`.
 
 Block force pushes and deletion, and apply the rules to administrators too. A required
 status is what turns a rule into a gate.
+
+Use a separate caller like the [repository drift workflow](https://github.com/Jon-275/dev-loop/blob/main/.github/workflows/repository-drift.yml).
+Replace its local workflow call and `devloop: '.'` with the same pinned commit for the
+reusable workflow and the installed tool. Use the repository's default branch and keep the `edited` trigger for retargeted PRs. If
+using a merge queue, also trigger the caller for `merge_group` with `checks_requested`.
+
+The advisory workflow runs on label events and skips its doctor job on those events.
+GitHub can count a skipped job as a pass. Keep label events and conditional skips out of
+the dedicated caller. On a disposable PR, prove that an intentional drift failure stays
+failed when a label is added and removed, then prove that a repaired revision passes.
+Record the check name and source reported by GitHub. Require the verified check before
+retiring any previous drift requirement. Audit other required checks for the same skip
+behavior. [GitHub's required status checks guide](https://docs.github.com/en/pull-requests/how-tos/merge-and-close-pull-requests/troubleshooting-required-status-checks)
 
 ## 5. Optional commit attribution
 

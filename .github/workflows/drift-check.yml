@@ -1,0 +1,30 @@
+name: Drift check
+
+on:
+  workflow_call:
+    inputs:
+      devloop:
+        description: A pinned uv requirement, or . when dev-loop checks this checkout
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  doctor:
+    name: Repository drift check
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@1db35dd8eee11c5894872e0b383ae6c406cf738d # v10.4.0
+        with:
+          version: "0.13.7"
+          python-version: "3.12.14"
+      - name: Check generated repository files
+        env:
+          DEVLOOP: ${{ inputs.devloop }}
+        run: uvx --from "$DEVLOOP" devloop doctor --check
