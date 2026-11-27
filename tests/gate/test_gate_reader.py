@@ -692,6 +692,14 @@ def test_a_workflow_that_expects_another_status_name_does_not_start(
         "devloop.toml is 'Merge gate'; make them the same\n"
     )
     assert not out.exists() or out.read_text(encoding="utf-8") == ""
+    # An empty name is a name: a caller that forwards an unset input must not skip the check.
+    assert cli([*args, "--context", ""]) == 2
+    assert "the workflow's context is ''" in capsys.readouterr().err
+    # A name that starts with a dash is read as the name, as the workflow passes it.
+    dashed = _project(tmp_path, CONFIG + 'context = "--second"\n')
+    assert cli([*dashed, "--context=--other"]) == 2
+    assert "is '--other' but gate.context in devloop.toml is '--second'" in capsys.readouterr().err
+    _project(tmp_path)
     # The same name, and no name at all (a caller of an older workflow), both start.
     ran: list[str] = []
 

@@ -130,7 +130,7 @@ jobs:
         # so the name this workflow reports a broken run under is the name devloop posts.
         run: >-
           devloop gate --repo "$GITHUB_REPOSITORY" --pr "$PR_NUMBER" --run-url "$RUN_URL"
-          --context "$GATE_CONTEXT"
+          --context="$GATE_CONTEXT"
 
       - name: Report a run that could not check
         # devloop's exit code is not its verdict: it fails only when it could not check.

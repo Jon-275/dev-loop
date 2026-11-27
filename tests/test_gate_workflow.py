@@ -85,7 +85,7 @@ GATE_JOB: dict[str, Any] = {
             "env": {"GATE_CONTEXT": "${{ inputs.context }}"},
             "run": (
                 'devloop gate --repo "$GITHUB_REPOSITORY" --pr "$PR_NUMBER" --run-url "$RUN_URL" '
-                '--context "$GATE_CONTEXT"'
+                '--context="$GATE_CONTEXT"'
             ),
         },
         {

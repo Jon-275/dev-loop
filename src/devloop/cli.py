@@ -88,7 +88,7 @@ def _parser() -> argparse.ArgumentParser:
             sub.add_argument("--run-url", default="", help="the run's URL, linked from the status")
             sub.add_argument(
                 "--context",
-                default="",
+                default=None,
                 help="the status name the workflow expects; do not start if gate.context differs",
             )
         if name == "main-health":
