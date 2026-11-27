@@ -30,7 +30,7 @@ from typing import Any
 
 import pytest
 import yaml
-from workflow_retry import GH_API
+from workflow_retry import GH_API, ISSUE_CREATE
 
 WORKFLOWS = Path(__file__).resolve().parents[1] / ".github" / "workflows"
 PERMISSIONS = {"contents": "read", "issues": "write"}
@@ -48,9 +48,11 @@ COMPARE = (
 )
 #: The issue step after the retry function, word for word.
 REST = r"""issues="repos/${GITHUB_REPOSITORY}/issues"
-# Every open issue with the label and exactly this title, oldest first.
-numbers="$(gh_api -X GET "$issues" -f state=open -f labels="$LABEL" -f per_page=100 \
-  --jq '[.[] | select(.pull_request == null and .title == env.TITLE) | .number] | sort | .[]')"
+open_issues() {  # every open issue with the label and exactly this title, oldest first
+  gh_api -X GET "$issues" -f state=open -f labels="$LABEL" -f per_page=100 \
+    --jq '[.[] | select(.pull_request == null and .title == env.TITLE) | .number] | sort | .[]'
+}
+numbers="$(open_issues)"
 # shellcheck disable=SC2086  # the numbers are split into one argument each
 set -- $numbers
 if [ "$CODE" = 0 ]; then
@@ -81,8 +83,19 @@ else
   gh_api "repos/${GITHUB_REPOSITORY}/labels/${LABEL}" > /dev/null 2>&1 ||
     gh_api "repos/${GITHUB_REPOSITORY}/labels" -f name="$LABEL" -f color=FBCA04 \
       -f description="the repository settings differ from devloop.toml" > /dev/null
-  gh_api "$issues" -f title="$TITLE" -f "labels[]=${LABEL}" \
-    -F body=@"$RUNNER_TEMP/settings-issue.md" > /dev/null
+  # Creating is not safe to send twice: GitHub may have made the issue and lost the
+  # reply. So this call is not retried blindly: after a failure, look again, and
+  # create only if the issue is still not there. Three tries at most.
+  for try in 1 2 3; do
+    if gh api "$issues" -f title="$TITLE" -f "labels[]=${LABEL}" \
+      -F body=@"$RUNNER_TEMP/settings-issue.md" > /dev/null; then
+      break
+    fi
+    if [ "$try" = 3 ]; then exit 1; fi
+    sleep "$((try * 2))"
+    numbers="$(open_issues)"
+    if [ -n "$numbers" ]; then break; fi
+  done
 fi
 """
 REPORT = GH_API + REST
@@ -243,6 +256,14 @@ state["calls"].append(f"{method} {path}")
 json.dump(state, open(state_file, "w"))
 if os.environ.get("FAIL") and os.environ["FAIL"] in f"{method} {path}":
     sys.exit("gh: Resource not accessible by integration (HTTP 403)")
+# $ONCE is "lose:<call>" (done, but the reply is a 502) or "drop:<call>" (not done, a 502).
+fault, _, target = os.environ.get("ONCE", "").partition(":")
+fault = fault if target == f"{method} {path}" and not state.get("faulted") else ""
+if fault:
+    state["faulted"] = True
+    json.dump(state, open(state_file, "w"))
+if fault == "drop":
+    sys.exit("gh: Server Error (HTTP 502)")
 one = lambda key: fields[key][0]
 parts = path.split("/")
 if (method, path) == ("GET", "repos/o/r/issues"):
@@ -270,6 +291,8 @@ elif (method, path) == ("POST", "repos/o/r/labels"):
 else:
     sys.exit(f"the fake gh has no answer for {method} {path}")
 json.dump(state, open(state_file, "w"))
+if fault == "lose":
+    sys.exit("gh: Server Error (HTTP 502)")
 """
 
 
@@ -288,8 +311,11 @@ class Repo:
         gh = tmp_path / "bin" / "gh"
         gh.write_text(f'#!/bin/sh\nexec "{sys.executable}" "{tmp_path}/fake_gh.py" "$@"\n')
         gh.chmod(0o755)
+        sleep = tmp_path / "bin" / "sleep"
+        sleep.write_text(f"#!/bin/sh\necho \"$1\" >> '{tmp_path}/slept'\n", encoding="utf-8")
+        sleep.chmod(0o755)
 
-    def run(self, code: int, report: str = "differs    x", fail: str = "") -> int:
+    def run(self, code: int, report: str = "differs    x", fail: str = "", once: str = "") -> int:
         """Run the issue step after a report that exited ``code``; return the step's exit code."""
         (self.tmp / "settings-report.txt").write_text(report + "\n", encoding="utf-8")
         env = {
@@ -298,6 +324,7 @@ class Repo:
             "RUNNER_TEMP": str(self.tmp),
             "STATE": str(self.state),
             "FAIL": fail,
+            "ONCE": once,
             "CODE": str(code),
             "TITLE": TITLE,
             "LABEL": LABEL,
@@ -406,7 +433,7 @@ def test_the_list_filter_keeps_only_this_issue_and_never_a_pull_request() -> Non
     jq = shutil.which("jq")
     if jq is None:
         pytest.skip("jq is not installed: the filter text is pinned, but was not run")
-    expression = REST.split("--jq '")[1].split("')\"")[0]
+    expression = REST.split("--jq '")[1].split("'\n")[0]
     listed = [
         {"number": 8, "title": TITLE},
         {"number": 5, "title": TITLE, "pull_request": {"url": "x"}},
@@ -444,3 +471,40 @@ def test_the_report_step_passes_the_exit_code_on_and_fails_on_any_other(
     done = subprocess.run(script, env=env, capture_output=True, text=True, check=False)
     assert done.stdout == "report for o/r\n"
     assert (done.returncode, output.read_text()) == ((0, f"code={code}\n") if passes else (2, ""))
+
+
+def _fresh(tmp_path: Path) -> Repo:
+    """Return a repository with no issue and no label yet."""
+    repo = Repo(tmp_path)
+    repo.state.write_text(json.dumps({"issues": [], "labels": [], "calls": []}))
+    return repo
+
+
+def test_a_create_whose_reply_is_lost_ends_with_exactly_one_open_issue(tmp_path: Path) -> None:
+    """GitHub made the issue and answered 502: the step looks again and does not create twice."""
+    repo = _fresh(tmp_path)
+    assert repo.run(1, "differs    x", once=f"lose:POST {ISSUES}") == 0
+    assert [issue["title"] for issue in repo.open()] == [TITLE]
+    assert repo.read("calls").count(f"POST {ISSUES}") == 1
+    assert repo.read("calls")[-1] == f"GET {ISSUES}"
+    assert (tmp_path / "slept").read_text().split() == ["2"]
+    assert repo.run(3, "not judged y") == 0 and len(repo.open()) == 1
+
+
+def test_a_create_that_never_reached_github_is_sent_again_once(tmp_path: Path) -> None:
+    repo = _fresh(tmp_path)
+    assert repo.run(1, "differs    x", once=f"drop:POST {ISSUES}") == 0
+    assert len(repo.open()) == 1 and repo.read("calls").count(f"POST {ISSUES}") == 2
+
+
+def test_a_create_that_keeps_failing_fails_the_step_after_three_tries(tmp_path: Path) -> None:
+    repo = _fresh(tmp_path)
+    assert repo.run(1, "differs    x", fail=f"POST {ISSUES}") != 0
+    assert repo.read("calls").count(f"POST {ISSUES}") == 3 and repo.open() == []
+    assert (tmp_path / "slept").read_text().split() == ["2", "4"]
+
+
+def test_only_the_create_is_sent_outside_the_retry_function() -> None:
+    assert REST.count("gh api ") == 1 and ISSUE_CREATE in REST
+    for call in ("PATCH", "/comments", "/labels", "-X GET"):
+        assert all("gh_api " in line for line in REST.splitlines() if call in line), call

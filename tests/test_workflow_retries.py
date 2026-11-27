@@ -15,7 +15,7 @@ from typing import Any
 
 import pytest
 import yaml
-from workflow_retry import GH_API
+from workflow_retry import GH_API, ISSUE_CREATE
 
 WORKFLOWS = Path(__file__).resolve().parents[1] / ".github" / "workflows"
 FILES = sorted(WORKFLOWS.glob("*.yml"))
@@ -148,7 +148,9 @@ def test_every_step_that_calls_gh_api_starts_with_the_same_function(path: Path) 
         if "gh api" not in run and "gh_api" not in run:
             continue
         assert run.startswith(GH_API), f"{path.name}: {step.get('name')}: no retry function"
-        rest = run[len(GH_API) :]
+        # Creating an issue is the exception: sent again blindly it could open two, so
+        # that step sends it bare and looks for the issue before each new try.
+        rest = run[len(GH_API) :].replace(ISSUE_CREATE, "", 1)
         assert "gh api" not in rest, f"{path.name}: {step.get('name')}: a bare gh api call"
         assert "gh_api " in rest, f"{path.name}: {step.get('name')}: the function is unused"
         assert "gh_api()" not in rest, f"{path.name}: {step.get('name')}: defined twice"
