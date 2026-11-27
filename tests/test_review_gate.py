@@ -59,7 +59,7 @@ def _decide(tmp_path: Path, **env: str) -> dict[str, str]:
 
 def _reviewed(gate: str, association: str, action: str, author: str, label: str) -> bool:
     """Return whether the rule, stated apart from the script, reviews this event."""
-    if gate != "members":
+    if gate == "everyone":
         return True
     if action == "labeled" and label != APPROVAL:
         return False
@@ -69,7 +69,7 @@ def _reviewed(gate: str, association: str, action: str, author: str, label: str)
 
 def test_the_key_is_spent_exactly_when_the_rule_says(tmp_path: Path) -> None:
     """Every combination of setting, author, event and label ends in the right answer."""
-    cases = itertools.product(("", "members"), ASSOCIATIONS, ACTIONS, AUTHORS, LABELS)
+    cases = itertools.product(("everyone", "members"), ASSOCIATIONS, ACTIONS, AUTHORS, LABELS)
     for gate, association, action, author, label in cases:
         if action != "labeled" and label:
             continue  # only a labeled event carries a label
@@ -160,11 +160,12 @@ def test_a_login_is_matched_whole_and_never_as_a_pattern(tmp_path: Path) -> None
         assert found["run"] == ("true" if author == "*" else "false"), author
 
 
-def test_an_unknown_gate_setting_fails_and_reviews_nothing(tmp_path: Path) -> None:
-    """A mistyped setting stops the run instead of reviewing everyone."""
+@pytest.mark.parametrize("gate", ["member", "", "Everyone", "open"])
+def test_an_unknown_gate_setting_fails_and_reviews_nothing(tmp_path: Path, gate: str) -> None:
+    """A mistyped or empty setting stops the run instead of reviewing everyone."""
     found = _decide(
         tmp_path,
-        GATE="member",
+        GATE=gate,
         APPROVAL_LABEL=APPROVAL,
         TRUSTED_BOTS="",
         ASSOCIATION="NONE",
@@ -182,7 +183,8 @@ def test_only_the_gate_lets_the_job_with_the_key_run() -> None:
     assert review["needs"] == "gate"
     assert review["if"] == "needs.gate.outputs.run == 'true'"
     assert "needs.gate.outputs.run" in review["concurrency"]["group"]
-    assert gate["permissions"] == {"statuses": "write"}
+    # contents: read is for the status guard's one read of the branches; nothing is checked out.
+    assert gate["permissions"] == {"contents": "read", "statuses": "write"}
     assert "secrets." not in str(gate)
     assert not any("uses" in step for step in gate["steps"])
     decide = next(s for s in gate["steps"] if s.get("id") == "decide")
@@ -199,27 +201,32 @@ def test_only_the_gate_lets_the_job_with_the_key_run() -> None:
 
 def test_a_waiting_pull_request_is_told_so_on_its_head_commit() -> None:
     """The status says who must act, and is posted only for a waiting pull request."""
-    waiting = _jobs()["gate"]["steps"][1]
-    assert waiting["if"] == "steps.decide.outputs.reason == 'waiting'"
+    waiting = _jobs()["gate"]["steps"][2]
+    assert waiting["if"] == (
+        "steps.decide.outputs.reason == 'waiting' && steps.due.outputs.due == 'true'"
+    )
     assert "state=pending" in waiting["run"]
     assert "Waiting for a maintainer to add the ${APPROVAL_LABEL} label" in waiting["run"]
     assert waiting["env"]["HEAD_SHA"] == "${{ github.event.pull_request.head.sha }}"
 
 
-@pytest.mark.parametrize("gate", ["", "members"])
-def test_the_default_is_unchanged_for_callers_that_set_no_gate(tmp_path: Path, gate: str) -> None:
-    """With no gate every pull request is reviewed, as before; a member always is."""
-    found = _decide(
-        tmp_path,
-        GATE=gate,
-        APPROVAL_LABEL=APPROVAL,
-        TRUSTED_BOTS="",
-        ASSOCIATION="OWNER" if gate else "NONE",
-        AUTHOR="someone",
-        ACTION="opened",
-        LABEL="",
-    )
-    assert found["run"] == "true"
+def test_a_caller_that_sets_no_gate_gets_the_members_gate(tmp_path: Path) -> None:
+    """The default keeps the key from a stranger; reviewing everyone is asked for by name."""
+    trigger = yaml.safe_load(WORKFLOW.read_text(encoding="utf-8"))
+    inputs = (trigger["on"] if "on" in trigger else trigger[True])["workflow_call"]["inputs"]
+    default = inputs["gate"]["default"]
+    assert default == "members"
+    stranger = {
+        "APPROVAL_LABEL": APPROVAL,
+        "TRUSTED_BOTS": "",
+        "ASSOCIATION": "NONE",
+        "AUTHOR": "a-stranger",
+        "ACTION": "opened",
+        "LABEL": "",
+    }
+    assert _decide(tmp_path, GATE=default, **stranger)["run"] == "false"
+    assert _decide(tmp_path, GATE="everyone", **stranger)["run"] == "true"
+    assert _decide(tmp_path, GATE=default, **{**stranger, "ASSOCIATION": "OWNER"})["run"] == "true"
 
 
 def test_only_an_approved_outside_pull_request_is_marked_outside() -> None:

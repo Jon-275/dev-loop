@@ -22,16 +22,24 @@
 # every pull request, so the status always reports; a pull request whose tier routes no
 # review to this reviewer, or that changes no reviewed file type, passes and says why.
 #
-# Outside pull requests (gate: members). A review spends the project's key and sends the
-# pull request's text to the reviewer, so a project can keep both for people it trusts:
-# with `gate: members` the review runs at once only when the author is the owner, a
-# member or a collaborator of the repository (or one of `trusted_bots`). Anyone else's
-# pull request waits, its status pending, until a maintainer adds the approval label;
-# that `labeled` event reviews the head it names, once. A later push is a new head and
-# waits again, so the caller also triggers on `labeled` and removes the label on every
-# push (docs/review.md, "Outside pull requests"). The decision reads only fields GitHub
-# sets (the author's association and login, the event's action and label), never
-# anything in the pull request, and it is made in a job that holds no key.
+# Outside pull requests (gate: members, the default). A review spends the project's key
+# and sends the pull request's text to the reviewer, so both are kept for people the
+# project trusts. The review runs at once only when the author is the owner, a member or
+# a collaborator of the repository, or one of `trusted_bots`. Anyone else's pull request
+# waits, its status pending, until a maintainer adds the approval label; that `labeled`
+# event reviews the head it names, once. A later push is a new head and waits again, so
+# the caller also triggers on `labeled` and calls unapprove.yml, which removes the label
+# on every push (docs/review.md, "Outside pull requests"). `gate: everyone` reviews
+# every pull request at once, for a private project whose authors are all trusted. The
+# decision reads only fields GitHub sets (the author's association and login, the
+# event's action and label), never anything in the pull request, and it is made in a
+# job that holds no key.
+#
+# A status belongs to a commit, not to a pull request. A fork's pull request whose head
+# is also the head of a branch in this repository gets no status and no review, so it
+# cannot replace the status that branch's own pull request earned (docs/security.md).
+# Both jobs check this, with the same step, before they post; the pending and success
+# posts below all depend on its answer.
 name: Model review
 
 on:
@@ -47,11 +55,11 @@ on:
         type: string
       gate:
         description: >-
-          Who is reviewed without approval: "" (everyone, the default) or "members"
-          (the owner, members, collaborators and trusted_bots; others wait for the label)
+          Who is reviewed without approval: "members" (the default: the owner, members,
+          collaborators and trusted_bots; others wait for the label) or "everyone"
         required: false
         type: string
-        default: ""
+        default: members
       approval_label:
         description: The label a maintainer adds to have an outside pull request reviewed
         required: false
@@ -78,9 +86,13 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 5
     permissions:
+      # contents: read is for one read, the branches whose head is the pull request's
+      # head commit (the status guard below). Nothing is checked out.
+      contents: read
       statuses: write
     outputs:
-      run: ${{ steps.decide.outputs.run }}
+      # No review, and so no key, for a pull request whose status cannot be written.
+      run: ${{ steps.decide.outputs.run == 'true' && steps.due.outputs.due == 'true' }}
       reason: ${{ steps.decide.outputs.reason }}
     steps:
       - name: Decide whether this event is reviewed
@@ -93,7 +105,7 @@ jobs:
           AUTHOR: ${{ github.event.pull_request.user.login }}
           ACTION: ${{ github.event.action }}
           LABEL: ${{ github.event.label.name }}
-        # reason is one of: open (no gate), member, trusted-bot, approved (the approval
+        # reason is one of: open (gate: everyone), member, trusted-bot, approved (the approval
         # label was just added), waiting (an outside pull request with no approval for
         # this head), other-label (some other label was added: nothing to do).
         run: |
@@ -121,16 +133,44 @@ jobs:
                   ;;
               esac
             fi
-          elif [ -n "$GATE" ]; then
-            echo "review.yml: unknown gate '$GATE' (use \"\" or \"members\")" >&2
+          elif [ "$GATE" != "everyone" ]; then
+            echo "review.yml: unknown gate '$GATE' (use \"members\" or \"everyone\")" >&2
             exit 1
           fi
           echo "run=${run}" >> "$GITHUB_OUTPUT"
           echo "reason=${reason}" >> "$GITHUB_OUTPUT"
           echo "gate: run=${run} reason=${reason}"
 
+      - name: Check a status for this pull request may be written on its head
+        id: due
+        env:
+          GH_TOKEN: ${{ github.token }}
+          HEAD_REPO: ${{ github.event.pull_request.head.repo.full_name }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        # A status belongs to a commit. A fork's pull request (a deleted fork has no
+        # name, so it is one too) whose head is also the head of a branch in this
+        # repository would replace that branch's status, so it gets none. A read that
+        # fails, or an answer that is not a count, fails the step: could not check.
+        run: |
+          due=true
+          if [ "$HEAD_REPO" != "$GITHUB_REPOSITORY" ]; then
+            shared="$(gh api "repos/${GITHUB_REPOSITORY}/commits/${HEAD_SHA}/branches-where-head" --jq length)"
+            case "$shared" in
+              0) ;;
+              '' | *[!0-9]*)
+                echo "::error title=Status guard::could not read the branches headed by this commit"
+                exit 1
+                ;;
+              *)
+                due=false
+                echo "::notice title=Status guard::No status written: this pull request comes from a fork and its head is also the head of a branch in this repository, whose status it would replace"
+                ;;
+            esac
+          fi
+          echo "due=${due}" >> "$GITHUB_OUTPUT"
+
       - name: Say the review waits for a maintainer
-        if: steps.decide.outputs.reason == 'waiting'
+        if: steps.decide.outputs.reason == 'waiting' && steps.due.outputs.due == 'true'
         env:
           GH_TOKEN: ${{ github.token }}
           PROVIDER: ${{ inputs.provider }}
@@ -161,23 +201,50 @@ jobs:
       group: devloop-review-${{ inputs.provider }}-${{ github.event.pull_request.number }}-${{ needs.gate.outputs.run }}
       cancel-in-progress: true
     steps:
+      - name: Check a status for this pull request may be written on its head
+        id: due
+        env:
+          GH_TOKEN: ${{ github.token }}
+          HEAD_REPO: ${{ github.event.pull_request.head.repo.full_name }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        # A status belongs to a commit. A fork's pull request (a deleted fork has no
+        # name, so it is one too) whose head is also the head of a branch in this
+        # repository would replace that branch's status, so it gets none. A read that
+        # fails, or an answer that is not a count, fails the step: could not check.
+        run: |
+          due=true
+          if [ "$HEAD_REPO" != "$GITHUB_REPOSITORY" ]; then
+            shared="$(gh api "repos/${GITHUB_REPOSITORY}/commits/${HEAD_SHA}/branches-where-head" --jq length)"
+            case "$shared" in
+              0) ;;
+              '' | *[!0-9]*)
+                echo "::error title=Status guard::could not read the branches headed by this commit"
+                exit 1
+                ;;
+              *)
+                due=false
+                echo "::notice title=Status guard::No status written: this pull request comes from a fork and its head is also the head of a branch in this repository, whose status it would replace"
+                ;;
+            esac
+          fi
+          echo "due=${due}" >> "$GITHUB_OUTPUT"
+
       - name: Mark the review pending on the head commit
-        id: context
+        if: steps.due.outputs.due == 'true'
         env:
           GH_TOKEN: ${{ github.token }}
           PROVIDER: ${{ inputs.provider }}
           HEAD_SHA: ${{ github.event.pull_request.head.sha }}
           RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
         # The status is "<Provider> review", the reviewer's name capitalised, as devloop
-        # names it; it is set before anything else, so every failure below reports.
+        # names it; it is set right after the guard, so every failure below reports.
         run: |
-          context="${PROVIDER^} review"
-          echo "context=${context}" >> "$GITHUB_OUTPUT"
           gh api "repos/${GITHUB_REPOSITORY}/statuses/${HEAD_SHA}" \
-            -f state=pending -f "context=${context}" \
+            -f state=pending -f "context=${PROVIDER^} review" \
             -f "description=Reviewing this commit" -f "target_url=${RUN_URL}"
 
       - name: Check out the base commit (the code and settings that run)
+        if: steps.due.outputs.due == 'true'
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           # github.sha is the default branch tip whose copy of the caller is running.
@@ -186,6 +253,7 @@ jobs:
           persist-credentials: false
 
       - name: Check out the pull request (data only, never executed)
+        if: steps.due.outputs.due == 'true'
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           ref: ${{ github.event.pull_request.head.sha }}
@@ -196,6 +264,7 @@ jobs:
           persist-credentials: false
 
       - uses: astral-sh/setup-uv@1db35dd8eee11c5894872e0b383ae6c406cf738d # v10.4.0
+        if: steps.due.outputs.due == 'true'
         with:
           # Pinned: this job holds the key, so its tools change only through a pull request.
           version: "0.13.7"
@@ -203,6 +272,7 @@ jobs:
           enable-cache: false
 
       - name: Install devloop from the trusted side
+        if: steps.due.outputs.due == 'true'
         working-directory: trusted
         env:
           DEVLOOP: ${{ inputs.devloop }}
@@ -210,6 +280,7 @@ jobs:
 
       - name: Review
         id: review
+        if: steps.due.outputs.due == 'true'
         working-directory: pr
         env:
           DEVLOOP_API_KEY: ${{ secrets.api_key }}
@@ -224,17 +295,20 @@ jobs:
         run: devloop review --provider "$PROVIDER" --trusted "$GITHUB_WORKSPACE/trusted"
 
       - name: Report the review's outcome on the head commit
-        if: always()
+        # Not when the guard said no status is due. When the guard itself broke (DUE is
+        # empty) this posts a failure, which can never grant a pass; success needs DUE.
+        if: always() && steps.due.outputs.due != 'false'
         env:
           GH_TOKEN: ${{ github.token }}
           HEAD_SHA: ${{ github.event.pull_request.head.sha }}
-          CONTEXT: ${{ steps.context.outputs.context }}
+          PROVIDER: ${{ inputs.provider }}
+          DUE: ${{ steps.due.outputs.due }}
           OUTCOME: ${{ steps.review.outcome }}
           # Counts and SHAs only, no paths: routed out, incomplete, incremental, nothing new.
           DESCRIPTION: ${{ steps.review.outputs.status_description }}
           RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
         run: |
-          if [ "$OUTCOME" = "success" ]; then
+          if [ "$OUTCOME" = "success" ] && [ "$DUE" = "true" ]; then
             state=success
             description="${DESCRIPTION:-Reviewed; resolve any finding threads before merge}"
           elif [ -n "$DESCRIPTION" ]; then
@@ -245,5 +319,5 @@ jobs:
             description="The review could not run; open the run for the reason"
           fi
           gh api "repos/${GITHUB_REPOSITORY}/statuses/${HEAD_SHA}" \
-            -f "state=${state}" -f "context=${CONTEXT}" \
+            -f "state=${state}" -f "context=${PROVIDER^} review" \
             -f "description=${description}" -f "target_url=${RUN_URL}"

@@ -6,6 +6,10 @@ skill copies ``devloop sync`` writes. Every excluded file is named. Over the lim
 fails unless the PR has the ``pr.large_label`` label. The check is advisory: every
 doubt (another event, a head that is not a merge ref, a git error, unreadable labels)
 passes with a note.
+
+In CI the limit and the exclusions come from the base's ``devloop.toml``
+(``--config-from``, see :mod:`devloop.rules`), so a pull request cannot raise its own
+limit; a base configuration that cannot be read is an error, not a pass.
 """
 
 from __future__ import annotations

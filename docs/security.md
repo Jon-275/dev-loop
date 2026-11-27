@@ -18,6 +18,32 @@ That is safe only if nothing the pull request controls is executed:
 The `Review labels` reply workflow runs on review events with no secrets and the default
 token, using the base branch's devloop.
 
+## A pull request does not choose its own rules
+
+`pr-hygiene.yml` runs on `pull_request`, so the `devloop.toml` in its checkout is the
+pull request's own copy. The checks that judge a pull request do not use that copy.
+
+- **Rules come from the base.** `devloop changes`, `devloop size` and
+  `devloop changelog check` run with `--config-from HEAD^1` and read `devloop.toml` from
+  the base commit. A pull request cannot widen `docs.files`, raise `pr.max_lines`, add
+  to `pr.exclude` or move `changelog.dir` for its own run. A change to these settings
+  takes effect from the next pull request.
+- **A change to `devloop.toml` is code.** Like a change under `.github/` or a skills
+  folder, it never skips the caller's code checks.
+- **A base with no `devloop.toml`.** This is the pull request that adopts devloop. Its
+  own file is used, and the log says so. It is the only case where a pull request's own
+  rules apply.
+- **A base file that cannot be read or is not valid.** The check fails with exit code 2,
+  and `devloop changes` answers `code=true`. It never falls back without saying so.
+
+`devloop doctor --check` still reads the pull request's own `devloop.toml`. That is on
+purpose: the file must be valid once the pull request is merged.
+
+This protects the rules, not the workflow. A `pull_request` run uses the pull request's
+copy of the calling workflow. So protect `.github/workflows/` as described under
+[Statuses any workflow can post](#statuses-any-workflow-can-post), and pin the shared
+workflow and devloop to a release.
+
 ## What each model vendor receives
 
 For each pull request a reviewer reviews, its vendor receives:
@@ -37,6 +63,38 @@ Any workflow in a same-repository pull request can post any commit status, inclu
 required one such as `Gemini review`. A required status is only as trustworthy as the
 workflows that can run. Protect `.github/workflows/` with a `CODEOWNERS` entry and
 require code-owner review, so a pull request cannot add a workflow that posts a fake pass.
+
+## A status belongs to a commit
+
+GitHub stores a commit status on the commit, not on the pull request. That matters when
+two pull requests share a head commit. Anyone can point a branch in their fork at the
+head of one of your branches and open a pull request from it. A status written for that
+pull request would replace the status your own pull request earned on the same commit.
+
+`Review labels` shows the risk. The fork's pull request has no review threads, so it
+passes, and that pass would replace a failure on yours.
+
+So devloop writes no status for a pull request from a fork when its head commit is also
+the head of a branch in your repository. This applies to `labels.yml`, `review.yml`,
+`council.yml` and `devloop council report --post`:
+
+- No status is written, neither pending nor a result. The log says why, and the job
+  succeeds.
+- The review does not run, so no key is used.
+- A fork that has been deleted still counts as a fork.
+- A pull request from your own repository is not checked and behaves as before.
+- If the check cannot be made, the job fails. It may still post a failure, which can
+  never let a pull request pass.
+
+Limits:
+
+- A fork's pull request in this state gets no status, so it cannot merge where those
+  statuses are required. Add a commit to it, or open it from a branch in the repository.
+- The branches are read when the job starts. If you later push a contributor's commit,
+  unchanged, to a branch of your own, that branch shares the statuses the fork's pull
+  request already has on the commit. Check them, or add a commit.
+- Only devloop's workflows have this check. Any other workflow that posts a status on
+  `pull_request_target` or on review events needs its own.
 
 ## Skills supply chain
 
