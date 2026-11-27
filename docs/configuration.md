@@ -22,7 +22,7 @@ to `[pr]`, `[docs]` or `[changelog]` therefore takes effect from the next pull r
 |---|---|---|
 | `max_lines` | `800` | The most added plus deleted lines a pull request may change. |
 | `exclude` | `[]` | Globs of files left out of the count, such as lock files. Skill copies are always left out. |
-| `exclude_blocks` | `[]` | Generated blocks inside hand-written files, each `{ path, start, end }`: the lines from `start` to `end` are left out. |
+| `exclude_blocks` | `[]` | Generated blocks inside hand-written files, each `{ path, start, end }` (such as `<!-- BEGIN SYNC:INPUTS -->` to `<!-- END SYNC:INPUTS -->` around a synced parameter table): the lines from `start` to `end` are left out. |
 | `large_label` | `"large-pr-approved"` | The label that lets a pull request over the limit pass. |
 
 ## [tiers]

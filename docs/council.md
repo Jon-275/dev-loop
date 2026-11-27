@@ -42,7 +42,8 @@ copies one into the project to specialise.
   claim in docs and reports is true and reproducible) and editor (the council's own report
   is plain and proven).
 - **Domain packs:** ml-statistics, data-engineering, crm-revops, gtm-strategy, payments,
-  regulated-data, frontend-ux, mobile, infrastructure, llm-apps, public-api.
+  financial-modeling, regulated-data, frontend-ux, mobile, infrastructure, llm-apps,
+  public-api.
 
 Together they fit the default reviewer budget: five reviewers for tier 1 (core,
 security, operations, claims, domain) and two for tier 2 (core, security).

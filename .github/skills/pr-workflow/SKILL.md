@@ -29,8 +29,10 @@ gets a change through them first time.
 8. **Commit** with a conventional message (`feat:`, `fix:`, `docs:`, `chore:`), then run
    `devloop pr-open` before pushing: never push to a branch whose PR already merged or
    closed. `devloop pr-open --install` makes git run it on every push.
-9. **Open the PR** with `gh pr create`. Say what changed and why; for a stateful change,
-   put the states, identities and invariants in the description.
+9. **Open the PR** with `gh pr create --body-file <file>` (write multi-line bodies and
+   comments to a scratch file rather than a shell heredoc so backticks and quotes are
+   never expanded). Say what changed and why; for a stateful change, put the states,
+   identities and invariants in the description.
 10. **Review rounds** follow the `address-review` skill: wait for every reviewer, answer
     every thread, push once.
 11. **Merge** only when the required checks pass and every thread is resolved with a

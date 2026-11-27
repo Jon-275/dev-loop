@@ -1,0 +1,1 @@
+- **Financial modeling council pack and PR guidance.** Added the `financial-modeling` council library role and workbook dependency/file signals (`openpyxl`, `xlsxwriter`, `xlwings`, `*.xlsx`, `*.xlsm`), documented `exclude_blocks` markers for synced reference tables, and updated `pr-workflow` to pass multi-line PR bodies via `--body-file`.
