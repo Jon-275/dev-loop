@@ -280,3 +280,50 @@ def test_a_rule_is_there_when_either_source_makes_it_and_absent_only_when_both_s
     assert rr.either(no, unknown) == unknown
     assert rr.either(unknown, Seen(reason="x")) == Seen(reason="HTTP 403; x")
     assert rr.opposite(yes) == no and rr.opposite(unknown) == unknown
+
+
+@pytest.mark.parametrize(
+    "entry",
+    [
+        None,
+        "deletion",
+        ["deletion"],
+        {"parameters": {}},
+        {"type": 7},
+        {"type": "pull_request", "parameters": None},
+        {"type": "pull_request", "parameters": ["require_code_owner_review"]},
+    ],
+)
+def test_a_rule_that_is_not_a_rule_leaves_the_rulesets_unread(entry: object) -> None:
+    made = ruleset(7, {"type": "deletion"})
+    made["rules"].append(entry)
+    facts, _ = _read(with_rulesets(baseline(), made))
+    reason = "ruleset 7: GitHub's answer has a rule that is not a rule"
+    assert (facts.rulesets, facts.rulesets_reason) == ((), reason)
+    assert rr.rule(facts, "deletion") == Seen(reason=reason)
+    assert rr.rule(facts, "pull_request", "require_code_owner_review") == Seen(reason=reason)
+    elsewhere, _ = _read(with_rulesets(baseline(), {**made, "target": "tag"}))
+    assert elsewhere.rulesets_reason == ""  # a ruleset that is not for branches is not read
+
+
+@pytest.mark.parametrize("parameters", [{}, {"require_code_owner_review": None}, None])
+def test_a_rule_that_does_not_say_the_parameter_asked_for_is_a_reason(
+    parameters: dict[str, Any] | None,
+) -> None:
+    asked: dict[str, Any] = {"type": "pull_request"}
+    if parameters is not None:
+        asked["parameters"] = parameters
+    full = pull_request(require_code_owner_review=True)
+    facts, _ = _read(with_rulesets(baseline(), ruleset(7, full), ruleset(8, asked)))
+    assert facts.rulesets_reason == ""
+    assert rr.rule(facts, "pull_request") == Seen(True)
+    assert rr.rule(facts, "pull_request", "require_code_owner_review") == Seen(
+        reason="rulesets: a pull_request rule does not say require_code_owner_review"
+    )
+
+
+def test_a_rule_without_parameters_is_read() -> None:
+    facts, _ = _read(with_rulesets(baseline(), ruleset(7, {"type": "non_fast_forward"})))
+    assert rr.rule(facts, "non_fast_forward") == Seen(True)
+    assert rr.rules(facts, "non_fast_forward") == [{}]
+    assert rr.rule(facts, "pull_request", "require_code_owner_review") == Seen(False)
