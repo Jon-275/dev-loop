@@ -35,6 +35,13 @@
 # event's action and label), never anything in the pull request, and it is made in a
 # job that holds no key.
 #
+# A cap on reviews (review.max_rounds in devloop.toml; 0, the default, is no cap). Once a
+# reviewer has posted that many reviews on a pull request, the next run sends nothing and
+# its status fails, saying so. A maintainer adds the `again_label` label for one more:
+# that `labeled` event reviews a member's pull request once, past the cap. On an outside
+# pull request the label alone starts nothing; the approval label still does, and that
+# approved review passes the cap while `again_label` is on the pull request.
+#
 # A status belongs to a commit, not to a pull request. A fork's pull request whose head
 # is also the head of a branch in this repository gets no status and no review, so it
 # cannot replace the status that branch's own pull request earned (docs/security.md).
@@ -65,6 +72,13 @@ on:
         required: false
         type: string
         default: ai-review-approved
+      again_label:
+        description: >-
+          The label a maintainer adds for one more review of a pull request that reached
+          review.max_rounds
+        required: false
+        type: string
+        default: review-again
       trusted_bots:
         description: Logins of bot authors reviewed without the label, separated by spaces
         required: false
@@ -94,12 +108,15 @@ jobs:
       # No review, and so no key, for a pull request whose status cannot be written.
       run: ${{ steps.decide.outputs.run == 'true' && steps.due.outputs.due == 'true' }}
       reason: ${{ steps.decide.outputs.reason }}
+      # A maintainer added again_label to a pull request that is reviewed without approval.
+      again: ${{ steps.decide.outputs.again }}
     steps:
       - name: Decide whether this event is reviewed
         id: decide
         env:
           GATE: ${{ inputs.gate }}
           APPROVAL_LABEL: ${{ inputs.approval_label }}
+          AGAIN_LABEL: ${{ inputs.again_label }}
           TRUSTED_BOTS: ${{ inputs.trusted_bots }}
           ASSOCIATION: ${{ github.event.pull_request.author_association }}
           AUTHOR: ${{ github.event.pull_request.user.login }}
@@ -108,12 +125,17 @@ jobs:
         # reason is one of: open (gate: everyone), member, trusted-bot, approved (the approval
         # label was just added), waiting (an outside pull request with no approval for
         # this head), other-label (some other label was added: nothing to do).
+        # again is true when the label for one more review was added and the pull request
+        # is reviewed without approval. On an outside pull request that label alone is
+        # another label: only the approval label spends the key there.
         run: |
           set -f  # a bot login holds [ and ], which must not be read as a file pattern
           run=true
           reason=open
+          again=false
           if [ "$GATE" = "members" ]; then
-            if [ "$ACTION" = "labeled" ] && [ "$LABEL" != "$APPROVAL_LABEL" ]; then
+            if [ "$ACTION" = "labeled" ] && [ "$LABEL" != "$APPROVAL_LABEL" ] \
+              && [ "$LABEL" != "$AGAIN_LABEL" ]; then
               run=false
               reason=other-label
             else
@@ -127,7 +149,12 @@ jobs:
                     if [ "$bot" = "$AUTHOR" ]; then reason=trusted-bot; fi
                   done
                   if [ "$reason" = "waiting" ] && [ "$ACTION" = "labeled" ]; then
-                    reason=approved
+                    if [ "$LABEL" = "$APPROVAL_LABEL" ]; then
+                      reason=approved
+                    else
+                      run=false
+                      reason=other-label
+                    fi
                   fi
                   if [ "$reason" = "waiting" ]; then run=false; fi
                   ;;
@@ -137,9 +164,13 @@ jobs:
             echo "review.yml: unknown gate '$GATE' (use \"members\" or \"everyone\")" >&2
             exit 1
           fi
+          if [ "$run" = "true" ] && [ "$ACTION" = "labeled" ] && [ "$LABEL" = "$AGAIN_LABEL" ]; then
+            again=true
+          fi
           echo "run=${run}" >> "$GITHUB_OUTPUT"
           echo "reason=${reason}" >> "$GITHUB_OUTPUT"
-          echo "gate: run=${run} reason=${reason}"
+          echo "again=${again}" >> "$GITHUB_OUTPUT"
+          echo "gate: run=${run} reason=${reason} again=${again}"
 
       - name: Check a status for this pull request may be written on its head
         id: due
@@ -355,6 +386,14 @@ jobs:
           # An outside pull request a maintainer approved: review.outside_max_chars
           # limits what it may send.
           DEVLOOP_OUTSIDE: ${{ needs.gate.outputs.reason == 'approved' }}
+          # One more review past review.max_rounds: the label was just added to a pull
+          # request reviewed without approval, or it is on an outside pull request whose
+          # approval label was just added. Both labels need triage rights to add.
+          DEVLOOP_REVIEW_AGAIN: >-
+            ${{ needs.gate.outputs.again == 'true'
+            || (needs.gate.outputs.reason == 'approved'
+            && contains(github.event.pull_request.labels.*.name, inputs.again_label)) }}
+          DEVLOOP_AGAIN_LABEL: ${{ inputs.again_label }}
           GITHUB_TOKEN: ${{ github.token }}
           PROVIDER: ${{ inputs.provider }}
           PR_NUMBER: ${{ github.event.pull_request.number }}
