@@ -280,6 +280,15 @@ def test_an_odd_path_is_strict(name: str) -> None:
     assert _lane(name).light is False
 
 
+@pytest.mark.parametrize(
+    "name", ["docs/.a.md", ".docs/a.md", "docs/x/.hidden/a.md", "docs/-a.md", "-docs/a.md"]
+)
+def test_no_part_of_a_plain_path_starts_with_a_dot_or_a_dash(name: str) -> None:
+    """The path check refuses a hidden part itself, not only because it is a control file."""
+    assert gate._is_plain(name) is False
+    assert gate._is_plain(name.replace("/.", "/").replace("/-", "/").lstrip(".-")) is True
+
+
 def test_a_path_exactly_at_the_length_limit_is_still_a_document() -> None:
     """The limit is the limit, not one less."""
     name = "docs/" + "a" * (gate.MAX_PATH - 8) + ".md"
