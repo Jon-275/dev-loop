@@ -314,3 +314,59 @@ def test_the_commit_judged_is_the_commit_written_when_the_head_moves(tmp_path: P
     assert len([u for u in api.gets if u.endswith("/pulls/7")]) == 1
     assert [u.split("/")[-2] for u in api.gets if "branches-where-head" in u] == [HEAD]
     assert {sha for sha, _ in api.posted} == {HEAD}
+
+
+# The request budget (docs/cost.md, "GitHub API reads per run"). The workflow token has an
+# hourly limit and every reply starts a run, so a change that adds a request must show here.
+
+COST = (Path(__file__).resolve().parents[2] / "docs" / "cost.md").read_text(encoding="utf-8")
+STATUS_READ = f"GET repos/o/r/commits/{HEAD}/status"
+STATUS_WRITE = f"POST repos/o/r/statuses/{HEAD}"
+#: One evaluation of a same-repository pull request: 3 REST reads, 2 GraphQL reads, 2 writes.
+LABELS_REQUESTS = [
+    "GET repos/o/r/pulls/7",
+    STATUS_WRITE,  # pending
+    STATUS_READ,
+    "POST graphql",  # the threads
+    STATUS_WRITE,  # the verdict
+    STATUS_READ,  # read again: a reply or a review may have landed meanwhile
+    "POST graphql",
+]
+
+
+def _requests(api: Api, checks: tuple[str, ...] = ()) -> list[str]:
+    """Run the check once; return every request it made, in order, without its query."""
+    made: list[str] = []
+
+    def send(method: str, url: str, token: str, body: object) -> Reply:
+        """Note the request and let the fake answer it."""
+        made.append(f"{method} {url.removeprefix('https://api.github.com/').split('?')[0]}")
+        return api(method, url, token, body)
+
+    gh = lb.Github("t", "o/r", send=send, sleep=lambda _: None)
+    assert lb.run(gh, 7, "run", REVIEWERS, PREFIXES, ("Testbot review",), checks) == 0
+    return made
+
+
+@pytest.mark.parametrize("threads", [0, 3], ids=["no-threads", "three-threads"])
+def test_one_labels_evaluation_makes_seven_requests_whatever_the_threads(threads: int) -> None:
+    """Threads come 100 to a page, so a typical pull request costs the same as an empty one."""
+    made = _requests(Api([_thread("accepted: fixed")] * threads, STATUS))
+    assert made == LABELS_REQUESTS, (
+        f"devloop labels made {len(made)} requests for one evaluation; the budget is "
+        f"{len(LABELS_REQUESTS)} (docs/cost.md, 'GitHub API reads per run'). If the new "
+        "request is needed, update the budget there and here."
+    )
+    assert "| `devloop labels` | 3 | 2 | 2 | 7 |" in COST
+
+
+def test_each_awaited_check_name_adds_one_read_to_each_of_the_two_passes() -> None:
+    made = _requests(Api([], STATUS), checks=("Outside Review",))
+    extra = [line for line in made if line.endswith("/check-runs")]
+    assert len(extra) == 2 and len(made) == len(LABELS_REQUESTS) + 2, made
+
+
+def test_a_forks_pull_request_adds_the_one_read_of_the_status_guard() -> None:
+    made = _requests(_fork([]))
+    assert len(made) == len(LABELS_REQUESTS) + 1, made
+    assert made[1] == f"GET repos/o/r/commits/{HEAD}/branches-where-head"
