@@ -1,6 +1,8 @@
-"""Read a pull request from GitHub, judge it by the gate's rules and post the status.
+"""``devloop gate``: read a pull request from GitHub, judge it and post the gate's status.
 
-The rules are :mod:`devloop.gate.rules`, with the ``[gate]`` table the caller read.
+The rules are :mod:`devloop.gate.rules`, with the ``[gate]`` table of the ``devloop.toml``
+in the folder the command runs in. The workflow checks out the default branch there, so
+a pull request never supplies its own rules.
 
 Invariants:
 
@@ -8,7 +10,7 @@ Invariants:
    default branch, and its status is due by :mod:`devloop.review.status_guard` (not a
    fork's pull request whose head a branch of the base repository also heads). The
    one exception is a ``failure`` when that last guard could not be read.
-2. :func:`evaluate` is the only writer of ``pending``, and writes it only after the guards.
+2. This command is the only writer of ``pending``, and writes it only after the guards.
 3. Whatever cannot be read is a ``failure`` on the head and exit code 1, never a pass
    and never an earlier success left standing. A pull request that cannot be read at
    all gets no status, only the failed run.
@@ -19,18 +21,25 @@ Invariants:
 
 from __future__ import annotations
 
+import re
 import sys
-from collections.abc import Mapping
+import time
+from collections.abc import Callable, Mapping
+from dataclasses import dataclass
+from pathlib import Path
 from typing import Any, Protocol
 from urllib.parse import quote
 
-from devloop.config import Gate
+from devloop.config import CONFIG_FILE, ConfigError, Gate, load_config
 from devloop.gate import rules
 from devloop.review import feedback as fb
 from devloop.review import status_guard as guard
+from devloop.review.github import GITHUB_API, Http, http
+from devloop.review.labels import write_outputs
 
 #: A list from the API is read to at most this many pages of 100.
 MAX_PAGES = 30
+_REPO = re.compile(r"[\w.-]+/[\w.-]+")
 
 
 class GitHub(Protocol):
@@ -43,6 +52,31 @@ class GitHub(Protocol):
     def post(self, sha: str, state: str, description: str) -> None:
         """Post the gate's status on ``sha``; raises ``FeedbackError``."""
         ...
+
+
+@dataclass(frozen=True)
+class Api:
+    """GitHub's REST API with the token of the job, retried like every devloop call."""
+
+    token: str
+    repo: str
+    context: str
+    run_url: str = ""
+    send: Http = http
+    sleep: Callable[[float], None] = time.sleep
+
+    def get(self, path: str) -> object:
+        """Return the decoded JSON of ``GET <api>/<path>``."""
+        url = f"{GITHUB_API}/{path}"
+        return fb.request("GET", url, self.token, send=self.send, sleep=self.sleep).data
+
+    def post(self, sha: str, state: str, description: str) -> None:
+        """Post the gate's status on ``sha``, linked to the run when its URL is known."""
+        body = {"state": state, "context": self.context, "description": description[:140]}
+        if self.run_url:
+            body["target_url"] = self.run_url
+        url = f"{GITHUB_API}/repos/{self.repo}/statuses/{sha}"
+        fb.request("POST", url, self.token, body, send=self.send, sleep=self.sleep)
 
 
 def _field(record: object, *keys: str) -> object:
@@ -188,3 +222,29 @@ def evaluate(hub: GitHub, repo: str, number: int, gate: Gate) -> int:
         print(f"devloop gate: could not check: {type(error).__name__}{detail}", file=sys.stderr)
         return 1
     return 0
+
+
+def main(root: Path, repo: str, number: int, run_url: str, env: Mapping[str, str]) -> int:
+    """Run the gate for one pull request; 2 when it cannot start, 1 when it could not check.
+
+    The status's name is written to ``$GITHUB_OUTPUT`` as ``context`` before anything is
+    read, so the workflow can report a run that broke under the same name.
+    """
+    try:
+        gate = rules.rules(load_config(root / CONFIG_FILE))
+    except ConfigError as error:
+        print(f"devloop gate: {error}", file=sys.stderr)
+        return 2
+    token = env.get("GITHUB_TOKEN", "")
+    if not token or not _REPO.fullmatch(repo) or number <= 0:
+        print(
+            "devloop gate: GITHUB_TOKEN, --repo owner/name and a positive --pr are required",
+            file=sys.stderr,
+        )
+        return 2
+    write_outputs(env.get("GITHUB_OUTPUT", ""), context=gate.context)
+    try:
+        return evaluate(Api(token, repo, gate.context, run_url), repo, number, gate)
+    except fb.FeedbackError as error:
+        print(f"devloop gate: could not check: {error}", file=sys.stderr)
+        return 1
