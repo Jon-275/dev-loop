@@ -154,7 +154,7 @@ def test_every_step_that_calls_gh_api_starts_with_the_same_function(path: Path) 
         assert "gh_api()" not in rest, f"{path.name}: {step.get('name')}: defined twice"
 
 
-def test_the_shared_workflows_call_gh_api_in_the_ten_known_steps() -> None:
+def test_the_shared_workflows_call_gh_api_in_the_eleven_known_steps() -> None:
     """A new call is a new line here, so its retry and its failure are thought about."""
     found = {
         (path.name, str(step.get("name")))
@@ -169,13 +169,14 @@ def test_the_shared_workflows_call_gh_api_in_the_ten_known_steps() -> None:
         ("labels.yml", "Check the pull request number and find its head"),
         ("labels.yml", "Report a run that posted no verdict"),
         ("review.yml", guard),
+        ("settings-check.yml", "Open, update or close the issue"),
         ("review.yml", "Say the review waits for a maintainer"),
         ("review.yml", "Mark the review pending on the head commit"),
         ("review.yml", "Report the review's outcome on the head commit"),
         ("unapprove.yml", "Remove the approval label"),
     }
     review = [s for s in _steps(WORKFLOWS / "review.yml") if s.get("name") == guard]
-    assert len(review) == 2  # the gate job's guard and the review job's: ten steps in all
+    assert len(review) == 2  # the gate job's guard and the review job's: eleven steps in all
 
 
 def test_the_function_holds_no_expression_and_is_short() -> None:

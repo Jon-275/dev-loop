@@ -20,6 +20,10 @@
 # nothing else; the issue is written with the workflow's own token. Without it the
 # report says what the workflow's token could read and "not judged" for the rest, so
 # the issue stays open.
+#
+# Only one run per repository works on the issue at a time. Its calls to GitHub use the
+# shared retry function, so one 502 does not fail the run; any call that still fails
+# fails the step.
 name: settings check
 
 on:
@@ -45,6 +49,10 @@ jobs:
     permissions:
       contents: read
       issues: write
+    # One run at a time: two that both find no open issue would each open one.
+    concurrency:
+      group: settings-check-${{ github.repository }}
+      cancel-in-progress: false
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
@@ -81,12 +89,35 @@ jobs:
           LABEL: repository-settings
           RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
         run: |
-          number="$(gh issue list --state open --label "$LABEL" --limit 100 \
-            --json number,title --jq 'map(select(.title == env.TITLE)) | .[0].number // empty')"
+          gh_api() {  # gh api; tried again after 2 s, then 4 s, on HTTP 429, a 5xx or a lost connection
+            local try out err
+            err="$(mktemp)"
+            for try in 1 2 3; do
+              if out="$(gh api "$@" 2>"$err")"; then
+                if [ -n "$out" ]; then printf '%s\n' "$out"; fi
+                return 0
+              fi
+              case "$(<"$err")" in
+                *"HTTP 429"* | *"HTTP 5"[0-9][0-9]* | *"error connecting to"* | *' "https://'*'": '*) ;;
+                *) break ;;
+              esac
+              if [ "$try" -lt 3 ]; then sleep "$((try * 2))"; fi
+            done
+            { printf '%s\n' "$out"; cat "$err"; } >&2
+            return 1
+          }
+          issues="repos/${GITHUB_REPOSITORY}/issues"
+          # Every open issue with the label and exactly this title, oldest first.
+          numbers="$(gh_api -X GET "$issues" -f state=open -f labels="$LABEL" -f per_page=100 \
+            --jq '[.[] | select(.pull_request == null and .title == env.TITLE) | .number] | sort | .[]')"
+          # shellcheck disable=SC2086  # the numbers are split into one argument each
+          set -- $numbers
           if [ "$CODE" = 0 ]; then
-            if [ -n "$number" ]; then
-              gh issue close "$number" --comment "The settings match devloop.toml again: ${RUN_URL}"
-            fi
+            for number in "$@"; do
+              gh_api "${issues}/${number}/comments" \
+                -f body="The settings match devloop.toml again: ${RUN_URL}" > /dev/null
+              gh_api -X PATCH "${issues}/${number}" -f state=closed > /dev/null
+            done
             exit 0
           fi
           {
@@ -99,11 +130,16 @@ jobs:
             echo
             echo "Run: ${RUN_URL}"
           } > "$RUNNER_TEMP/settings-issue.md"
-          if [ -n "$number" ]; then
-            gh issue edit "$number" --body-file "$RUNNER_TEMP/settings-issue.md"
+          if [ "$#" -gt 0 ]; then
+            gh_api -X PATCH "${issues}/$1" -F body=@"$RUNNER_TEMP/settings-issue.md" > /dev/null
+            shift
+            for extra in "$@"; do  # a second issue, from a run whose answer was lost: one is kept
+              gh_api -X PATCH "${issues}/${extra}" -f state=closed -f state_reason=not_planned > /dev/null
+            done
           else
-            gh label create "$LABEL" --color FBCA04 --force \
-              --description "the repository settings differ from devloop.toml"
-            gh issue create --title "$TITLE" --label "$LABEL" \
-              --body-file "$RUNNER_TEMP/settings-issue.md"
+            gh_api "repos/${GITHUB_REPOSITORY}/labels/${LABEL}" > /dev/null 2>&1 ||
+              gh_api "repos/${GITHUB_REPOSITORY}/labels" -f name="$LABEL" -f color=FBCA04 \
+                -f description="the repository settings differ from devloop.toml" > /dev/null
+            gh_api "$issues" -f title="$TITLE" -f "labels[]=${LABEL}" \
+              -F body=@"$RUNNER_TEMP/settings-issue.md" > /dev/null
           fi

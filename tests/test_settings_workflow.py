@@ -1,17 +1,36 @@
 """The settings check's workflow: what runs, with which token, and what it may write.
 
-Invariants. The job is pinned whole here: an edit to a shell line, the environment or
-any other key fails a test. The token that can read admin settings is used by the
-read-only report and by nothing else; the issue is written with the workflow's own
-token. The job may write issues and nothing else.
+States: no open issue, or one open issue titled TITLE with the label. Identity: the
+title and the label together; a pull request or another title is never touched.
+
+Invariants.
+
+1. After any sequence of runs there is at most one open issue, and it is open exactly
+   when the last report differed or could not be judged. Its body is the last report.
+2. A clean run with no open issue writes nothing.
+3. A ``gh`` call that fails fails the step: a lost write is never a green run.
+4. One run at a time per repository, so two runs cannot both open an issue.
+5. The job is pinned whole here: an edit to a shell line, the environment or any other
+   key fails a test. The token that can read admin settings is used by the read-only
+   report and by nothing else; the issue is written with the workflow's own token. The
+   job may write issues and nothing else.
+
+The issue step is run here, as the workflow has it, against a fake ``gh`` that keeps
+issues in a file.
 """
 
 from __future__ import annotations
 
+import json
+import shutil
+import subprocess
+import sys
 from pathlib import Path
 from typing import Any
 
+import pytest
 import yaml
+from workflow_retry import GH_API
 
 WORKFLOWS = Path(__file__).resolve().parents[1] / ".github" / "workflows"
 PERMISSIONS = {"contents": "read", "issues": "write"}
@@ -27,40 +46,57 @@ COMPARE = (
     '  *) exit "$code" ;;\n'
     "esac\n"
 )
-REPORT = (
-    'number="$(gh issue list --state open --label "$LABEL" --limit 100 \\\n'
-    "  --json number,title --jq 'map(select(.title == env.TITLE)) | .[0].number // empty')\"\n"
-    'if [ "$CODE" = 0 ]; then\n'
-    '  if [ -n "$number" ]; then\n'
-    '    gh issue close "$number" --comment "The settings match devloop.toml again: ${RUN_URL}"\n'
-    "  fi\n"
-    "  exit 0\n"
-    "fi\n"
-    "{\n"
-    "  echo 'A setting differs from `devloop.toml`, or could not be judged.'\n"
-    "  echo 'This issue closes itself when a later run is clean.'\n"
-    "  echo\n"
-    "  echo '```'\n"
-    '  cat "$RUNNER_TEMP/settings-report.txt"\n'
-    "  echo '```'\n"
-    "  echo\n"
-    '  echo "Run: ${RUN_URL}"\n'
-    '} > "$RUNNER_TEMP/settings-issue.md"\n'
-    'if [ -n "$number" ]; then\n'
-    '  gh issue edit "$number" --body-file "$RUNNER_TEMP/settings-issue.md"\n'
-    "else\n"
-    '  gh label create "$LABEL" --color FBCA04 --force \\\n'
-    '    --description "the repository settings differ from devloop.toml"\n'
-    '  gh issue create --title "$TITLE" --label "$LABEL" \\\n'
-    '    --body-file "$RUNNER_TEMP/settings-issue.md"\n'
-    "fi\n"
-)
+#: The issue step after the retry function, word for word.
+REST = r"""issues="repos/${GITHUB_REPOSITORY}/issues"
+# Every open issue with the label and exactly this title, oldest first.
+numbers="$(gh_api -X GET "$issues" -f state=open -f labels="$LABEL" -f per_page=100 \
+  --jq '[.[] | select(.pull_request == null and .title == env.TITLE) | .number] | sort | .[]')"
+# shellcheck disable=SC2086  # the numbers are split into one argument each
+set -- $numbers
+if [ "$CODE" = 0 ]; then
+  for number in "$@"; do
+    gh_api "${issues}/${number}/comments" \
+      -f body="The settings match devloop.toml again: ${RUN_URL}" > /dev/null
+    gh_api -X PATCH "${issues}/${number}" -f state=closed > /dev/null
+  done
+  exit 0
+fi
+{
+  echo 'A setting differs from `devloop.toml`, or could not be judged.'
+  echo 'This issue closes itself when a later run is clean.'
+  echo
+  echo '```'
+  cat "$RUNNER_TEMP/settings-report.txt"
+  echo '```'
+  echo
+  echo "Run: ${RUN_URL}"
+} > "$RUNNER_TEMP/settings-issue.md"
+if [ "$#" -gt 0 ]; then
+  gh_api -X PATCH "${issues}/$1" -F body=@"$RUNNER_TEMP/settings-issue.md" > /dev/null
+  shift
+  for extra in "$@"; do  # a second issue, from a run whose answer was lost: one is kept
+    gh_api -X PATCH "${issues}/${extra}" -f state=closed -f state_reason=not_planned > /dev/null
+  done
+else
+  gh_api "repos/${GITHUB_REPOSITORY}/labels/${LABEL}" > /dev/null 2>&1 ||
+    gh_api "repos/${GITHUB_REPOSITORY}/labels" -f name="$LABEL" -f color=FBCA04 \
+      -f description="the repository settings differ from devloop.toml" > /dev/null
+  gh_api "$issues" -f title="$TITLE" -f "labels[]=${LABEL}" \
+    -F body=@"$RUNNER_TEMP/settings-issue.md" > /dev/null
+fi
+"""
+REPORT = GH_API + REST
 #: The whole job, word for word.
 JOB: dict[str, Any] = {
     "name": "Check the repository settings",
     "runs-on": "ubuntu-24.04",
     "timeout-minutes": 5,
     "permissions": PERMISSIONS,
+    # One run at a time: two that both find no open issue would each open one.
+    "concurrency": {
+        "group": "settings-check-${{ github.repository }}",
+        "cancel-in-progress": False,
+    },
     "steps": [
         {
             "uses": "actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1",
@@ -144,7 +180,7 @@ def test_the_admin_token_reaches_only_the_read_only_report() -> None:
     steps = JOB["steps"]
     holders = [step.get("name") for step in steps if "secrets." in str(step)]
     assert holders == ["Compare the settings with devloop.toml"]
-    assert "gh " not in COMPARE and "devloop doctor --repo" in COMPARE
+    assert "gh" not in COMPARE and "devloop doctor --repo" in COMPARE
     assert "devloop" not in REPORT.replace("devloop.toml", "")
 
 
@@ -175,3 +211,236 @@ def test_dev_loop_calls_it_weekly_and_by_hand_with_the_default_token() -> None:
             "with": {"devloop": "."},
         }
     }
+
+
+TITLE = "Repository settings differ from devloop.toml"
+LABEL = "repository-settings"
+ISSUES = "repos/o/r/issues"
+#: A fake ``gh api``: issues and labels live in ``$STATE``; ``$FAIL`` names a call to refuse.
+FAKE_GH = r"""
+import json, os, sys
+args, state_file = sys.argv[1:], os.environ["STATE"]
+state = json.load(open(state_file))
+assert args[0] == "api", args
+method, path, fields, skip = "", "", {}, 0
+for index, arg in enumerate(args[1:], start=1):
+    if skip:
+        skip -= 1
+    elif arg == "-X":
+        method, skip = args[index + 1], 1
+    elif arg in ("-f", "-F"):
+        key, _, value = args[index + 1].partition("=")
+        if arg == "-F" and value.startswith("@"):
+            value = open(value[1:]).read()
+        fields.setdefault(key, []).append(value)
+        skip = 1
+    elif arg == "--jq":
+        fields["--jq"], skip = [args[index + 1]], 1
+    else:
+        path = arg
+method = method or ("POST" if set(fields) - {"--jq"} else "GET")
+state["calls"].append(f"{method} {path}")
+json.dump(state, open(state_file, "w"))
+if os.environ.get("FAIL") and os.environ["FAIL"] in f"{method} {path}":
+    sys.exit("gh: Resource not accessible by integration (HTTP 403)")
+one = lambda key: fields[key][0]
+parts = path.split("/")
+if (method, path) == ("GET", "repos/o/r/issues"):
+    assert (one("state"), one("labels")) == ("open", os.environ["LABEL"])
+    for issue in sorted(state["issues"], key=lambda issue: issue["number"]):
+        mine = one("labels") in issue["labels"] and issue["title"] == os.environ["TITLE"]
+        if issue["state"] == "open" and mine and "pull_request" not in issue:
+            print(issue["number"])
+elif (method, path) == ("POST", "repos/o/r/issues"):
+    number = 1 + max([issue["number"] for issue in state["issues"]], default=0)
+    assert set(fields["labels[]"]) <= set(state["labels"]), "the label does not exist"
+    new = {"number": number, "title": one("title"), "labels": fields["labels[]"]}
+    state["issues"].append({**new, "state": "open", "body": one("body"), "comments": []})
+elif method == "PATCH" and parts[:3] == ["repos", "o", "r"] and len(parts) == 5:
+    issue = next(i for i in state["issues"] if i["number"] == int(parts[4]))
+    issue.update({key: one(key) for key in ("state", "body") if key in fields})
+elif method == "POST" and parts[5:] == ["comments"]:
+    issue = next(i for i in state["issues"] if i["number"] == int(parts[4]))
+    issue["comments"].append(one("body"))
+elif method == "GET" and parts[3:4] == ["labels"]:
+    if parts[4] not in state["labels"]:
+        sys.exit("gh: Not Found (HTTP 404)")
+elif (method, path) == ("POST", "repos/o/r/labels"):
+    state["labels"].append(one("name"))
+else:
+    sys.exit(f"the fake gh has no answer for {method} {path}")
+json.dump(state, open(state_file, "w"))
+"""
+
+
+class Repo:
+    """A repository's issues, as the fake ``gh`` keeps them, and the step run against them."""
+
+    def __init__(self, tmp_path: Path, *issues: dict[str, Any]) -> None:
+        """Write the fake ``gh`` and start with ``issues``."""
+        self.tmp = tmp_path
+        self.state = tmp_path / "state.json"
+        self.state.write_text(
+            json.dumps({"issues": list(issues), "labels": [LABEL], "calls": []}), encoding="utf-8"
+        )
+        (tmp_path / "bin").mkdir()
+        (tmp_path / "fake_gh.py").write_text(FAKE_GH, encoding="utf-8")
+        gh = tmp_path / "bin" / "gh"
+        gh.write_text(f'#!/bin/sh\nexec "{sys.executable}" "{tmp_path}/fake_gh.py" "$@"\n')
+        gh.chmod(0o755)
+
+    def run(self, code: int, report: str = "differs    x", fail: str = "") -> int:
+        """Run the issue step after a report that exited ``code``; return the step's exit code."""
+        (self.tmp / "settings-report.txt").write_text(report + "\n", encoding="utf-8")
+        env = {
+            "PATH": f"{self.tmp / 'bin'}:/usr/bin:/bin",
+            "GITHUB_REPOSITORY": "o/r",
+            "RUNNER_TEMP": str(self.tmp),
+            "STATE": str(self.state),
+            "FAIL": fail,
+            "CODE": str(code),
+            "TITLE": TITLE,
+            "LABEL": LABEL,
+            "RUN_URL": "https://example.invalid/run",
+        }
+        script = ["bash", "--noprofile", "--norc", "-e", "-o", "pipefail", "-c", REPORT]
+        return subprocess.run(script, env=env, capture_output=True, check=False).returncode
+
+    def read(self, key: str) -> list[Any]:
+        """Return ``issues``, ``labels`` or ``calls`` as they are now."""
+        found: list[Any] = json.loads(self.state.read_text(encoding="utf-8"))[key]
+        return found
+
+    def open(self) -> list[dict[str, Any]]:
+        """Return the open issues."""
+        return [issue for issue in self.read("issues") if issue["state"] == "open"]
+
+    def writes(self) -> list[str]:
+        """Return the calls that were not reads."""
+        return [call for call in self.read("calls") if not call.startswith("GET ")]
+
+
+def _issue(number: int, title: str = TITLE, **more: object) -> dict[str, Any]:
+    """Return one open issue with the label."""
+    issue = {"number": number, "title": title, "labels": [LABEL], "state": "open"}
+    return {**issue, "body": "old", "comments": [], **more}
+
+
+def test_the_issue_follows_the_reports_open_updated_then_closed(tmp_path: Path) -> None:
+    repo = Repo(tmp_path)
+    repo.state.write_text(json.dumps({"issues": [], "labels": [], "calls": []}))
+    assert repo.run(1, "differs    merge_methods") == 0
+    (first,) = repo.open()
+    assert (first["title"], first["labels"], repo.read("labels")) == (TITLE, [LABEL], [LABEL])
+    assert "```\ndiffers    merge_methods\n```" in first["body"]
+    assert "Run: https://example.invalid/run" in first["body"]
+    assert repo.run(3, "not judged enforce_admins") == 0
+    (second,) = repo.read("issues")
+    assert second["number"] == first["number"] and second["state"] == "open"
+    assert "not judged enforce_admins" in second["body"] and "merge_methods" not in second["body"]
+    assert repo.run(0, "ok") == 0
+    (closed,) = repo.read("issues")
+    assert closed["state"] == "closed" and repo.open() == []
+    assert closed["comments"] == [
+        "The settings match devloop.toml again: https://example.invalid/run"
+    ]
+    assert repo.writes().count(f"POST {ISSUES}") == 1
+
+
+def test_a_clean_report_with_no_open_issue_writes_nothing(tmp_path: Path) -> None:
+    others = [_issue(1, "main is red: CI"), _issue(2, state="closed"), _issue(3, pull_request={})]
+    repo = Repo(tmp_path, *others)
+    assert repo.run(0, "ok") == 0
+    assert repo.read("calls") == [f"GET {ISSUES}"]
+    assert repo.read("issues") == others
+
+
+@pytest.mark.parametrize(
+    "codes", [(1, 1, 1), (0, 1, 0, 3), (3, 0, 0, 1), (1, 3, 1, 0), (0, 0), (3, 1, 0, 1, 3)]
+)
+def test_after_any_runs_one_issue_is_open_exactly_when_the_last_report_was_not_clean(
+    tmp_path: Path, codes: tuple[int, ...]
+) -> None:
+    repo = Repo(tmp_path, _issue(1, "main is red: CI"))
+    for turn, code in enumerate(codes):
+        assert repo.run(code, f"report {turn}") == 0
+        mine = [issue for issue in repo.open() if issue["title"] == TITLE]
+        assert len(mine) == (0 if code == 0 else 1)
+        assert all(f"report {turn}\n" in issue["body"] for issue in mine)
+    assert [issue["number"] for issue in repo.open() if issue["title"] != TITLE] == [1]
+
+
+def test_a_second_open_issue_is_closed_and_the_oldest_kept(tmp_path: Path) -> None:
+    repo = Repo(tmp_path, _issue(9), _issue(4))
+    assert repo.run(1, "differs    now") == 0
+    assert [(issue["number"], "now" in issue["body"]) for issue in repo.open()] == [(4, True)]
+    (tmp_path / "clean").mkdir()
+    both = Repo(tmp_path / "clean", _issue(9), _issue(4))
+    assert both.run(0, "ok") == 0 and both.open() == []
+
+
+@pytest.mark.parametrize(
+    ("code", "fail", "issues"),
+    [
+        (1, f"GET {ISSUES}", 0),
+        (1, f"POST {ISSUES}", 0),
+        (1, "POST repos/o/r/labels", 0),
+        (1, f"PATCH {ISSUES}/1", 1),
+        (0, f"GET {ISSUES}", 1),
+        (0, f"POST {ISSUES}/1/comments", 1),
+        (0, f"PATCH {ISSUES}/1", 1),
+    ],
+)
+def test_a_gh_call_that_fails_fails_the_step(
+    tmp_path: Path, code: int, fail: str, issues: int
+) -> None:
+    repo = Repo(tmp_path, *[_issue(1)][:issues])
+    if "labels" in fail:
+        repo.state.write_text(json.dumps({"issues": [], "labels": [], "calls": []}))
+    assert repo.run(code, fail=fail) != 0
+    assert any(call.startswith(fail) for call in repo.read("calls"))
+    assert [issue["body"] for issue in repo.open()] == ["old"] * issues
+
+
+def test_the_list_filter_keeps_only_this_issue_and_never_a_pull_request() -> None:
+    jq = shutil.which("jq")
+    if jq is None:
+        pytest.skip("jq is not installed: the filter text is pinned, but was not run")
+    expression = REST.split("--jq '")[1].split("')\"")[0]
+    listed = [
+        {"number": 8, "title": TITLE},
+        {"number": 5, "title": TITLE, "pull_request": {"url": "x"}},
+        {"number": 3, "title": TITLE + " "},
+        {"number": 2, "title": TITLE},
+    ]
+    done = subprocess.run(
+        [jq, expression],
+        input=json.dumps(listed),
+        env={"TITLE": TITLE},
+        capture_output=True,
+        text=True,
+        check=True,
+    )
+    assert done.stdout.split() == ["2", "8"]
+
+
+@pytest.mark.parametrize(("code", "passes"), [(0, True), (1, True), (3, True), (2, False)])
+def test_the_report_step_passes_the_exit_code_on_and_fails_on_any_other(
+    tmp_path: Path, code: int, passes: bool
+) -> None:
+    (tmp_path / "bin").mkdir()
+    devloop = tmp_path / "bin" / "devloop"
+    devloop.write_text(f'#!/bin/sh\necho "report for $3"\nexit {code}\n', encoding="utf-8")
+    devloop.chmod(0o755)
+    output = tmp_path / "output"
+    output.write_text("", encoding="utf-8")
+    env = {
+        "PATH": f"{tmp_path / 'bin'}:/usr/bin:/bin",
+        "GITHUB_REPOSITORY": "o/r",
+        "RUNNER_TEMP": str(tmp_path),
+        "GITHUB_OUTPUT": str(output),
+    }
+    script = ["bash", "--noprofile", "--norc", "-e", "-o", "pipefail", "-c", COMPARE]
+    done = subprocess.run(script, env=env, capture_output=True, text=True, check=False)
+    assert done.stdout == "report for o/r\n"
+    assert (done.returncode, output.read_text()) == ((0, f"code={code}\n") if passes else (2, ""))
