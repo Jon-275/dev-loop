@@ -20,6 +20,7 @@ nav:
   - Upgrading: upgrading.md
   - Model reviews: review.md
   - Merge gate: gate.md
+  - Writing a status check: status-checks.md
   - Tool matrix: tool-matrix.md
   - Conformance benchmark: benchmark.md
   - Decisions:
