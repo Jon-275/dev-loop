@@ -48,7 +48,7 @@ GATE_JOB: dict[str, Any] = {
     "permissions": PERMISSIONS,
     # One evaluation of a pull request at a time; a run is never stopped part-way.
     "concurrency": {
-        "group": "merge-gate-${{ github.repository }}-" + NUMBER,
+        "group": "merge-gate-${{ github.repository }}-${{ inputs.context }}-" + NUMBER,
         "cancel-in-progress": False,
     },
     "env": {
@@ -82,8 +82,10 @@ GATE_JOB: dict[str, Any] = {
             "name": "Decide and post the status",
             "id": "gate",
             "timeout-minutes": 5,
+            "env": {"GATE_CONTEXT": "${{ inputs.context }}"},
             "run": (
-                'devloop gate --repo "$GITHUB_REPOSITORY" --pr "$PR_NUMBER" --run-url "$RUN_URL"'
+                'devloop gate --repo "$GITHUB_REPOSITORY" --pr "$PR_NUMBER" --run-url "$RUN_URL" '
+                '--context="$GATE_CONTEXT"'
             ),
         },
         {
@@ -93,7 +95,7 @@ GATE_JOB: dict[str, Any] = {
             "if": ("failure() && (steps.gate.outputs.sha != '' || steps.head.outputs.sha != '')"),
             "env": {
                 "SHA": "${{ steps.gate.outputs.sha || steps.head.outputs.sha }}",
-                "CONTEXT": "${{ steps.gate.outputs.context || 'Merge gate' }}",
+                "CONTEXT": "${{ inputs.context }}",
             },
             "run": (
                 GH_API + 'gh_api "repos/${GITHUB_REPOSITORY}/statuses/${SHA}" -f state=failure \\\n'
@@ -124,7 +126,15 @@ def test_the_gate_runs_only_the_default_branchs_devloop_with_no_secret() -> None
     assert set(triggers) == {"workflow_call"}
     assert set(triggers["workflow_call"]) == {"inputs"}
     inputs = triggers["workflow_call"]["inputs"]
-    assert set(inputs) == {"devloop", "pr"}
+    assert set(inputs) == {"devloop", "pr", "context"}
+    # The name a broken run reports under, and part of the queue's name, so a second gate
+    # beside another shares neither. It is "Merge gate" unless the caller says otherwise.
+    assert inputs["context"] == {
+        "description": inputs["context"]["description"],
+        "required": False,
+        "type": "string",
+        "default": "Merge gate",
+    }
     assert (inputs["devloop"]["required"], inputs["pr"]["required"]) == (True, False)
     assert inputs["pr"]["default"] == ""
     assert set(workflow) - {"on", True} == {"name", "permissions", "jobs"}

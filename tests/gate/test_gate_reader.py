@@ -677,6 +677,43 @@ def test_the_head_judged_is_written_to_the_outputs_before_a_later_read_can_fail(
     assert out.read_text(encoding="utf-8") == "" and odd.posted == []
 
 
+def test_a_workflow_that_expects_another_status_name_does_not_start(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """The workflow reports a broken run under its own name, so the two must agree."""
+    monkeypatch.setenv("GITHUB_TOKEN", "t0ken")
+    out = tmp_path / "out"
+    monkeypatch.setenv("GITHUB_OUTPUT", str(out))
+    args = _project(tmp_path)
+    monkeypatch.setattr(reader, "evaluate", lambda *args, **more: pytest.fail("the gate ran"))
+    assert cli([*args, "--context", "Second gate"]) == 2
+    assert capsys.readouterr().err == (
+        "devloop gate: the workflow's context is 'Second gate' but gate.context in "
+        "devloop.toml is 'Merge gate'; make them the same\n"
+    )
+    assert not out.exists() or out.read_text(encoding="utf-8") == ""
+    # An empty name is a name: a caller that forwards an unset input must not skip the check.
+    assert cli([*args, "--context", ""]) == 2
+    assert "the workflow's context is ''" in capsys.readouterr().err
+    # A name that starts with a dash is read as the name, as the workflow passes it.
+    dashed = _project(tmp_path, CONFIG + 'context = "--second"\n')
+    assert cli([*dashed, "--context=--other"]) == 2
+    assert "is '--other' but gate.context in devloop.toml is '--second'" in capsys.readouterr().err
+    _project(tmp_path)
+    # The same name, and no name at all (a caller of an older workflow), both start.
+    ran: list[str] = []
+
+    def evaluate(*args: object, **more: object) -> int:
+        """Record that the gate ran."""
+        ran.append("ran")
+        return 0
+
+    monkeypatch.setattr(reader, "evaluate", evaluate)
+    assert cli([*args, "--context", "Merge gate"]) == 0
+    assert cli(args) == 0
+    assert ran == ["ran", "ran"]
+
+
 def test_settings_or_outputs_that_cannot_be_read_or_written_are_start_up_errors(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:

@@ -164,7 +164,14 @@ Require the status only on the default branch. The gate gives no verdict for a p
 request into another branch. Its head commit shows a gate status only when that commit
 also heads a pull request into the default branch, and then it shows that one's status.
 
-If you set `gate.context`, require that name instead. One limit: when the run
-breaks before devloop has read its settings (devloop could not be installed, `devloop.toml`
-is not valid, or there is no token), the `failure` is reported as `Merge gate`. A status
-under the new name is left as it was.
+If you set `gate.context`, require that name instead, and pass the same name to the
+workflow as its `context` input. `devloop gate` does not start when the two differ. A run
+that breaks at any point then reports its `failure` under that name.
+
+## A second gate beside another
+
+To compare the gate with a status a project already posts under the name `Merge gate`,
+give the new one another name: set `gate.context` and the workflow's `context` input to
+it. Runs queue per name, so the two never wait on or replace each other's runs, and
+neither writes the other's status. Require the new name only once the two have agreed
+on real pull requests.

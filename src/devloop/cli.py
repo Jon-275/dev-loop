@@ -86,6 +86,11 @@ def _parser() -> argparse.ArgumentParser:
             sub.add_argument("--pr", required=True, type=int, help="the pull request number")
             sub.add_argument("--repo", required=True, help="owner/name")
             sub.add_argument("--run-url", default="", help="the run's URL, linked from the status")
+            sub.add_argument(
+                "--context",
+                default=None,
+                help="the status name the workflow expects; do not start if gate.context differs",
+            )
         if name == "main-health":
             sub.add_argument("--workflow", required=True, help="the workflow's name")
             sub.add_argument("--sha", required=True, help="the commit the run tested")
@@ -274,7 +279,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     if args.command == "gate":
         from devloop.gate.reader import main as gate_main
 
-        return gate_main(root, args.repo, args.pr, args.run_url, os.environ)
+        return gate_main(root, args.repo, args.pr, args.run_url, os.environ, args.context)
     if args.command in ("release-notes", "release-due"):
         from devloop import release
 
