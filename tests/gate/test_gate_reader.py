@@ -524,3 +524,23 @@ def test_an_unexpected_error_ends_as_a_failure_and_prints_its_kind_not_its_text(
     again = Broken([_file()])
     assert again.run() == 1
     assert again.states == ["pending", "failure"]
+
+
+BAD: dict[str, tuple[object, ...]] = {
+    "filename": (MISSING, None, 7, "", ["docs/a.md"]),
+    "status": (MISSING, None, 1),
+    "previous_filename": (7, ["docs/b.md"], {"a": 1}),
+}
+
+
+@pytest.mark.parametrize(("key", "value"), [(k, v) for k, bad in BAD.items() for v in bad])
+def test_a_changed_file_whose_name_or_kind_is_not_text_is_could_not_check(
+    key: str, value: object, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """The record is refused where it is read: the rules only ever see text."""
+    entry = {"filename": "docs/a.md", "status": "renamed", "previous_filename": "docs/b.md"}
+    hub = Hub([entry])
+    hub.files = [{k: v for k, v in {**entry, key: value}.items() if v is not MISSING}]
+    assert hub.run() == 1
+    assert hub.states == ["pending", "failure"]
+    assert "a changed file's name or kind of change is not text" in capsys.readouterr().err

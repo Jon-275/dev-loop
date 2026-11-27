@@ -85,6 +85,19 @@ def _tree(hub: GitHub, repo: str, sha: str) -> dict[str, str]:
     return {str(entry.get("path")): str(entry.get("mode")) for entry in _records(tree.get("tree"))}
 
 
+def _changed(entry: Mapping[str, object], modes: Mapping[str, str]) -> rules.ChangedFile:
+    """Return one record of the comparison as a changed file; raises when it is not text."""
+    name, status, previous = (entry.get(k) for k in ("filename", "status", "previous_filename"))
+    if (
+        not isinstance(name, str)
+        or not name
+        or not isinstance(status, str)
+        or not (previous is None or isinstance(previous, str))
+    ):
+        raise fb.FeedbackError("a changed file's name or kind of change is not text")
+    return rules.ChangedFile(path=name, status=status, previous=previous, mode=modes.get(name))
+
+
 def _lane_of(hub: GitHub, repo: str, pull: dict[str, Any], gate: Gate) -> tuple[rules.Lane, int]:
     """Return the lane of the head of ``pull`` as it was read, and how many files it changes.
 
@@ -103,15 +116,7 @@ def _lane_of(hub: GitHub, repo: str, pull: dict[str, Any], gate: Gate) -> tuple[
     if counts[0] != counts[1] or any(type(count) is not int for count in counts):
         return rules.Lane(False, True, "the list of changed files is not complete"), 0
     modes = _tree(hub, repo, sha)
-    files = [
-        rules.ChangedFile(
-            path=str(entry.get("filename") or ""),
-            status=str(entry.get("status") or ""),
-            previous=entry.get("previous_filename"),
-            mode=modes.get(str(entry.get("filename") or "")),
-        )
-        for entry in _records(answer.get("files"))
-    ]
+    files = [_changed(entry, modes) for entry in _records(answer.get("files"))]
     known = _tree(hub, repo, base)
     found = rules.lane(files, expected=int(pull["changed_files"]), known=known, gate=gate)
     return found, len(files)
