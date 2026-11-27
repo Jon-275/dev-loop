@@ -27,9 +27,9 @@ project when it moves its pin; [upgrading](docs/upgrading.md) says how.
 ## Scope
 
 In scope: the `devloop` command under `src/`, the shared workflows under
-`.github/workflows/`, and the skills and templates devloop writes into a project. A
-flaw that lets a pull request run code with a project's keys, post a status it should
-not, or choose its own review rules is the kind this policy is for.
+`.github/workflows/`, and the skills and templates devloop writes into a project.
+Examples: a pull request that can run code with a project's keys, post a status it
+should not, or choose its own review rules.
 
 Out of scope: third-party dependencies and the model vendors' services (report those
 upstream), and a project's own changes to the workflows it calls.

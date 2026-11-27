@@ -31,8 +31,8 @@ uv sync
   .venv/bin/mkdocs build --strict
   ```
 
-[AGENTS.md](AGENTS.md) has the same rules for a coding agent, and `docs/decisions/` has
-the decisions that bind the code. Read the relevant one before changing that area.
+[AGENTS.md](AGENTS.md) gives a coding agent the same rules. `docs/decisions/` holds the
+decisions the code must follow, so read the relevant one before you change that area.
 
 ## What happens to your pull request
 
