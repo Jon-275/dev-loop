@@ -42,3 +42,11 @@ def test_the_page_says_what_it_leaves_out_and_why() -> None:
         "Signed commits",
         "Linear history",
     ]
+
+
+def test_the_baseline_requires_a_pull_request_as_adoption_does() -> None:
+    assert "require a pull request" in _page("adoption.md")
+    baseline = _page(PAGE).split("## The baseline")[1].split("\n## ")[0]
+    rows = [line for line in baseline.splitlines() if line.startswith("| A pull request before")]
+    assert len(rows) == 1
+    assert "zero required approvals" in rows[0] and "required_pull_request_reviews" in rows[0]
