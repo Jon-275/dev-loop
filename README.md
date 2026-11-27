@@ -33,6 +33,9 @@ devloop doctor --check    # check nothing has drifted; run this in CI
   committed branch locally, the same way.
 - `devloop changelog check|build`: check the changelog fragments in `changes/`, or add
   them to `CHANGELOG.md` (see [changes/README.md](changes/README.md)).
+- `devloop release-notes [--version X.Y.Z]`: print a version's section of `CHANGELOG.md`,
+  as its release notes. `devloop release-due`: in CI, on a push to main, say whether the
+  commit set a new version to tag and publish ([release.yml](.github/workflows/release.yml)).
 - `devloop changes`: in CI, say whether a pull request changes only documentation, so
   the code checks can be skipped.
 - `devloop pr-open [branch ...]`: refuse to push to a branch whose pull request has

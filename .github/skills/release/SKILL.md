@@ -5,7 +5,8 @@ description: Release a new version (bump the version, build the changelog from i
 
 # Release
 
-A release is its own small PR, merged like any other, then a tag on its merge commit.
+A release is its own small PR, merged like any other, then a tag on its merge commit
+and a published release.
 For a model or generated report distributed with matching guides or previews, also
 follow [the artifact bundle procedure](references/artifact-bundles.md). It keeps the
 prior site active until the new downloads have been verified.
@@ -24,11 +25,20 @@ prior site active until the new downloads have been verified.
 5. **Run every gate**, including `devloop doctor --check`, then open the PR with
    `pr-workflow` and wait for its checks. When this project is devloop itself, also run
    `devloop bench` locally and put its scorecard in the PR description.
-6. **Merge**, then tag the merge commit and publish the release with that version's
-   changelog section as the notes:
+6. **Merge.** Where the project has a release workflow (in devloop,
+   `.github/workflows/release.yml`), it tags the merge commit `v<version>` and publishes
+   the release with that version's changelog section as the notes. Do not tag by hand
+   first: the workflow does nothing for a version whose tag exists.
+7. **Check** the workflow's run and the default branch's CI on the merge commit, then
+   `gh release view v<version>`, and install from the new tag once to confirm it reports
+   the new version.
+8. **If the workflow failed, or the project has none.** It creates nothing when the
+   changelog has no `## <version> - <date>` section or the version is not `X.Y.Z`. Re-run a
+   run that only broke (a network error). Otherwise fix the cause in its own PR. A
+   later push does not release, because only the commit that changed the version does,
+   so then publish by hand on the release's merge commit:
+   `devloop release-notes --version <version> > <notes>`, then
    `gh release create v<version> --target <merge sha> --notes-file <notes>`.
-7. **Check** the default branch's CI on the merge commit, and install from the new tag
-   once to confirm it reports the new version.
 
 ## When not to use
 

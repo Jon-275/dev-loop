@@ -1,0 +1,63 @@
+# Tags and publishes a new version of dev-loop when its release pull request merges.
+# This is dev-loop's own workflow, not a shared one.
+#
+# On every push to main it asks `devloop release-due` one question: did this commit
+# change the version in pyproject.toml to one that has no tag yet? If so, and
+# CHANGELOG.md has that version's `## <version> - <date>` section, it creates the tag
+# `v<version>` on this commit and publishes a release with that section as its notes.
+#
+# It does nothing when the version is the one the commit's first parent has, or when the
+# tag exists, so a later push never tags a later commit and a second run for the same
+# commit creates nothing. It fails, and creates nothing, when the new version is not
+# X.Y.Z, when the changelog has no section for it, or when the tags could not be read.
+#
+# An existing tag is never moved: the tag is checked before anything is created, and
+# `gh release create` with a tag that exists attaches to it where it is.
+#
+# Security: it runs only on a push to main, never on a pull request, so everything it
+# runs has been merged. devloop is installed from this commit's own checkout. Only the
+# one job can write contents, and only its last step holds the token.
+name: Release
+
+on:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  release:
+    name: Tag and publish a new version
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    steps:
+      - name: Check out this commit and its parent (the version is compared with the parent's)
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          fetch-depth: 2
+          persist-credentials: false
+
+      - uses: astral-sh/setup-uv@1db35dd8eee11c5894872e0b383ae6c406cf738d # v10.4.0
+        with:
+          version: "0.13.7"
+          python-version: "3.12.14"
+          enable-cache: false
+
+      - name: Install devloop from this commit
+        run: uv tool install .
+
+      - name: Decide whether this commit is a release
+        id: due
+        run: devloop release-due --output "$RUNNER_TEMP/release-notes.md"
+
+      - name: Create the tag and publish the release
+        if: steps.due.outputs.release == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ steps.due.outputs.tag }}
+        run: >-
+          gh release create "$TAG" --repo "$GITHUB_REPOSITORY" --target "$GITHUB_SHA"
+          --title "$TAG" --notes-file "$RUNNER_TEMP/release-notes.md"
