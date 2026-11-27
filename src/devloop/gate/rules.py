@@ -26,6 +26,7 @@ import re
 from collections.abc import Collection, Mapping, Sequence
 from dataclasses import dataclass
 from functools import cache
+from pathlib import PurePosixPath
 from typing import Any
 
 from devloop.config import Config, Gate, GateCheck
@@ -128,7 +129,8 @@ def rules(config: Config) -> Gate:
 
     These are the project's skills, lenses and council roles, the folders skills are
     rendered to, the lessons seed and page, the file the lessons' rules go in, and the
-    review's feedback and patterns files.
+    review's feedback and patterns files. A folder set to the repository root (``.``)
+    makes every path a control file.
     """
     folders = (
         config.skills.project,
@@ -138,7 +140,10 @@ def rules(config: Config) -> Gate:
     )
     lessons, review = config.lessons, config.review
     files = (lessons.seed, lessons.doc, lessons.agents, review.feedback, review.lessons)
-    managed = [glob for folder in folders for glob in (folder, f"{folder}/**")]
+    managed: list[str] = []
+    for folder in folders:
+        name = PurePosixPath(folder).as_posix()
+        managed += ["**"] if name == "." else [name, f"{name}/**"]
     managed += [name for name in files if name]
     return dataclasses.replace(config.gate, control=(*config.gate.control, *managed))
 
@@ -209,9 +214,9 @@ def lane(
     Args:
         files: The changed files.
         expected: How many files the pull request says it changes.
-        known: The paths on the default branch. A file that differs from one of them,
-            or from another changed file, only by case is strict: on some systems one
-            replaces the other.
+        known: The paths on the default branch. A name a file has or had that differs
+            from one of them, or from another such name, only by case is strict: on
+            some systems one replaces the other.
         gate: The rules, from :func:`rules`.
 
     """
@@ -225,7 +230,7 @@ def lane(
         return Lane(False, True, "the list of changed files is not complete")
     if any(is_control(name, gate.control) for name in names):
         return Lane(False, True, "control files change")
-    if len({path.casefold() for path in paths}) != len(paths):
+    if len({name.casefold() for name in names}) != len(names):
         return Lane(False, False, "two changed paths differ only by case")
     if len(files) > gate.max_light_files:
         return Lane(False, False, f"more than {gate.max_light_files} files change")
@@ -239,7 +244,7 @@ def lane(
             return Lane(False, False, "files other than documents change")
         if file.status != "removed" and file.mode != REGULAR:
             return Lane(False, False, "a document that is not a regular file")
-        if folded.get(file.path.casefold(), file.path) != file.path:
+        if any(folded.get(n.casefold(), n) != n for n in (file.path, file.previous) if n):
             return Lane(False, False, "a path that differs from an existing one only by case")
     return Lane(True, False, "documents only")
 
@@ -292,13 +297,15 @@ def is_trusted(pull: Mapping[str, Any], repo: str, trusted_bots: Sequence[str]) 
     GitHub's own word on the author: the owner, a member or a collaborator. Or a bot,
     one in ``trusted_bots`` or the repository's own workflow account, whose pull request
     comes from a branch of ``repo`` itself: the same login on a fork's head is not trusted.
+    Repository names are compared without regard to case, as GitHub does.
     """
     if pull.get("author_association") in TRUSTED_ASSOCIATIONS:
         return True
     user = pull.get("user") or {}
     head_repo = ((pull.get("head") or {}).get("repo") or {}).get("full_name")
     named = user.get("login") in (BOT_LOGIN, *trusted_bots)
-    return user.get("type") == "Bot" and named and head_repo == repo
+    same = isinstance(head_repo, str) and head_repo.casefold() == repo.casefold()
+    return user.get("type") == "Bot" and named and same
 
 
 def status_signal(statuses: Sequence[Mapping[str, Any]], context: str) -> Signal:

@@ -529,6 +529,26 @@ def test_an_unexpected_error_ends_as_a_failure_and_prints_its_kind_not_its_text(
     assert again.states == ["pending", "failure"]
 
 
+BAD: dict[str, tuple[object, ...]] = {
+    "filename": (MISSING, None, 7, "", ["docs/a.md"]),
+    "status": (MISSING, None, 1),
+    "previous_filename": (7, ["docs/b.md"], {"a": 1}),
+}
+
+
+@pytest.mark.parametrize(("key", "value"), [(k, v) for k, bad in BAD.items() for v in bad])
+def test_a_changed_file_whose_name_or_kind_is_not_text_is_could_not_check(
+    key: str, value: object, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """The record is refused where it is read: the rules only ever see text."""
+    entry = {"filename": "docs/a.md", "status": "renamed", "previous_filename": "docs/b.md"}
+    hub = Hub([entry])
+    hub.files = [{k: v for k, v in {**entry, key: value}.items() if v is not MISSING}]
+    assert hub.run() == 1
+    assert hub.states == ["pending", "failure"]
+    assert "a changed file's name or kind of change is not text" in capsys.readouterr().err
+
+
 # --- the API client and the command ----------------------------------------------------
 
 
@@ -580,9 +600,9 @@ def test_the_command_judges_with_the_rules_of_the_folder_it_runs_in(
     """The token, the repository, the number and the default branch's [gate] reach the gate."""
     seen: list[object] = []
 
-    def evaluate(*args: object) -> int:
+    def evaluate(*args: object, outputs: str) -> int:
         """Record what the gate was called with."""
-        seen.extend(args)
+        seen.extend([*args, outputs])
         return 0
 
     monkeypatch.setattr(reader, "evaluate", evaluate)
@@ -591,7 +611,8 @@ def test_the_command_judges_with_the_rules_of_the_folder_it_runs_in(
     text = CONFIG + 'context = "May merge"\ncontrol = ["tools/**"]\n'
     assert cli(_project(tmp_path, text)) == 0
     expected = rules.rules(parse_config(text))
-    assert seen == [reader.Api("t0ken", "o/r", "May merge", "u"), "o/r", 7, expected]
+    api, out = reader.Api("t0ken", "o/r", "May merge", "u"), str(tmp_path / "out")
+    assert seen == [api, "o/r", 7, expected, out]
     assert "tools/**" in expected.control
     # The workflow reads the status's name to report a run that broke.
     assert (tmp_path / "out").read_text() == "context=May merge\n"
@@ -635,3 +656,44 @@ def test_the_status_name_is_one_short_line(context: str) -> None:
     """It is written to the workflow's outputs and into a log command."""
     with pytest.raises(ConfigError, match=r"gate\.context must be one line"):
         parse_config(f'[framework]\nversion = "0.1"\n[gate]\ncontext = "{context}"\n')
+
+
+def test_the_head_judged_is_written_to_the_outputs_before_a_later_read_can_fail(
+    tmp_path: Path,
+) -> None:
+    """The workflow reports a run that broke on the head this run judged, not an older one."""
+    out = tmp_path / "out"
+    for broken in ("/branches-where-head", "/compare/", "/statuses"):
+        out.write_text("", encoding="utf-8")
+        hub = Hub([CORE], fork=True, **OUTSIDER)
+        hub.fail = broken
+        assert reader.evaluate(hub, "o/r", 7, GATE, outputs=str(out)) == 1
+        assert out.read_text(encoding="utf-8") == f"sha={HEAD}\n"
+    # A head that is not a commit id is never written: it would be read as more outputs.
+    odd = Hub([_file()], head={"sha": HEAD + "\nposted=true", "repo": {"full_name": "o/r"}})
+    out.write_text("", encoding="utf-8")
+    with pytest.raises(fb.FeedbackError, match="names no head commit"):
+        reader.evaluate(odd, "o/r", 7, GATE, outputs=str(out))
+    assert out.read_text(encoding="utf-8") == "" and odd.posted == []
+
+
+def test_settings_or_outputs_that_cannot_be_read_or_written_are_start_up_errors(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """One line and exit code 2, as for an invalid devloop.toml: never a traceback."""
+    monkeypatch.setattr(reader, "evaluate", lambda *args, **more: pytest.fail("the gate ran"))
+    monkeypatch.setenv("GITHUB_TOKEN", "t0ken")
+    args = _project(tmp_path)
+    # GITHUB_OUTPUT in a folder that does not exist.
+    monkeypatch.setenv("GITHUB_OUTPUT", str(tmp_path / "none" / "out"))
+    assert cli(args) == 2
+    assert capsys.readouterr().err == "devloop gate: GITHUB_OUTPUT could not be written\n"
+    monkeypatch.delenv("GITHUB_OUTPUT")
+    # A devloop.toml that is not UTF-8, then one that is a folder.
+    (tmp_path / "devloop.toml").write_bytes(b'[framework]\nversion = "\xff\xfe"\n')
+    assert cli(args) == 2
+    assert capsys.readouterr().err == "devloop gate: devloop.toml could not be read\n"
+    (tmp_path / "devloop.toml").unlink()
+    (tmp_path / "devloop.toml").mkdir()
+    assert cli(args) == 2
+    assert capsys.readouterr().err == "devloop gate: devloop.toml could not be read\n"
