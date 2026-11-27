@@ -1,0 +1,159 @@
+# Compares the repository's live GitHub settings with the [github] table of devloop.toml
+# (docs/github-settings.md), for every project that uses devloop. It keeps ONE issue,
+# "Repository settings differ from devloop.toml": opened or updated with the report when
+# a setting differs or could not be judged, and closed when a later run is clean.
+#
+# Call it on a schedule and by hand:
+#
+#   settings:
+#     uses: Jon-275/dev-loop/.github/workflows/settings-check.yml@<tag>
+#     permissions:
+#       contents: read
+#       issues: write
+#     with:
+#       devloop: git+https://github.com/Jon-275/dev-loop@<tag>
+#     secrets:
+#       token: ${{ secrets.SETTINGS_READ_TOKEN }}   # optional
+#
+# `token` is a token that can read the repository's admin settings (a fine-grained token
+# with read access to Administration). It is used for the GET calls of the report and
+# nothing else; the issue is written with the workflow's own token. Without it the
+# report says what the workflow's token could read and "not judged" for the rest, so
+# the issue stays open.
+#
+# Only one run per repository works on the issue at a time. Its calls to GitHub use the
+# shared retry function, so one 502 does not fail the run; any call that still fails
+# fails the step. Creating the issue is the exception: it is never sent again without
+# first looking whether the issue is there.
+name: settings check
+
+on:
+  workflow_call:
+    inputs:
+      devloop:
+        description: Where to install devloop from (a uv requirement, or . in dev-loop itself)
+        required: true
+        type: string
+    secrets:
+      token:
+        description: A token that can read the repository's admin settings
+        required: false
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    name: Check the repository settings
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      issues: write
+    # One run at a time: two that both find no open issue would each open one.
+    concurrency:
+      group: settings-check-${{ github.repository }}
+      cancel-in-progress: false
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@1db35dd8eee11c5894872e0b383ae6c406cf738d # v10.4.0
+        with:
+          version: "0.13.7"
+          python-version: "3.12.14"
+      - name: Install devloop
+        env:
+          DEVLOOP: ${{ inputs.devloop }}
+        run: uv tool install "$DEVLOOP"
+      - name: Compare the settings with devloop.toml
+        id: doctor
+        env:
+          GITHUB_TOKEN: ${{ secrets.token || github.token }}
+        run: |
+          set +e
+          devloop doctor --repo "$GITHUB_REPOSITORY" > "$RUNNER_TEMP/settings-report.txt"
+          code=$?
+          set -e
+          cat "$RUNNER_TEMP/settings-report.txt"
+          # 0 clean, 1 a setting differs, 3 a setting was not judged; anything else broke.
+          case "$code" in
+            0|1|3) echo "code=${code}" >> "$GITHUB_OUTPUT" ;;
+            *) exit "$code" ;;
+          esac
+      - name: Open, update or close the issue
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          CODE: ${{ steps.doctor.outputs.code }}
+          TITLE: Repository settings differ from devloop.toml
+          LABEL: repository-settings
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          gh_api() {  # gh api; tried again after 2 s, then 4 s, on HTTP 429, a 5xx or a lost connection
+            local try out err
+            err="$(mktemp)"
+            for try in 1 2 3; do
+              if out="$(gh api "$@" 2>"$err")"; then
+                if [ -n "$out" ]; then printf '%s\n' "$out"; fi
+                return 0
+              fi
+              case "$(<"$err")" in
+                *"HTTP 429"* | *"HTTP 5"[0-9][0-9]* | *"error connecting to"* | *' "https://'*'": '*) ;;
+                *) break ;;
+              esac
+              if [ "$try" -lt 3 ]; then sleep "$((try * 2))"; fi
+            done
+            { printf '%s\n' "$out"; cat "$err"; } >&2
+            return 1
+          }
+          issues="repos/${GITHUB_REPOSITORY}/issues"
+          open_issues() {  # every open issue with the label and exactly this title, oldest first
+            gh_api -X GET "$issues" -f state=open -f labels="$LABEL" -f per_page=100 \
+              --jq '[.[] | select(.pull_request == null and .title == env.TITLE) | .number] | sort | .[]'
+          }
+          numbers="$(open_issues)"
+          # shellcheck disable=SC2086  # the numbers are split into one argument each
+          set -- $numbers
+          if [ "$CODE" = 0 ]; then
+            for number in "$@"; do
+              gh_api "${issues}/${number}/comments" \
+                -f body="The settings match devloop.toml again: ${RUN_URL}" > /dev/null
+              gh_api -X PATCH "${issues}/${number}" -f state=closed > /dev/null
+            done
+            exit 0
+          fi
+          {
+            echo 'A setting differs from `devloop.toml`, or could not be judged.'
+            echo 'This issue closes itself when a later run is clean.'
+            echo
+            echo '```'
+            cat "$RUNNER_TEMP/settings-report.txt"
+            echo '```'
+            echo
+            echo "Run: ${RUN_URL}"
+          } > "$RUNNER_TEMP/settings-issue.md"
+          if [ "$#" -gt 0 ]; then
+            gh_api -X PATCH "${issues}/$1" -F body=@"$RUNNER_TEMP/settings-issue.md" > /dev/null
+            shift
+            for extra in "$@"; do  # a second issue, from a run whose answer was lost: one is kept
+              gh_api -X PATCH "${issues}/${extra}" -f state=closed -f state_reason=not_planned > /dev/null
+            done
+          else
+            gh_api "repos/${GITHUB_REPOSITORY}/labels/${LABEL}" > /dev/null 2>&1 ||
+              gh_api "repos/${GITHUB_REPOSITORY}/labels" -f name="$LABEL" -f color=FBCA04 \
+                -f description="the repository settings differ from devloop.toml" > /dev/null
+            # Creating is not safe to send twice: GitHub may have made the issue and lost the
+            # reply. So this call is not retried blindly: after a failure, look again, and
+            # create only if the issue is still not there. Three tries at most.
+            for try in 1 2 3; do
+              if gh api "$issues" -f title="$TITLE" -f "labels[]=${LABEL}" \
+                -F body=@"$RUNNER_TEMP/settings-issue.md" > /dev/null; then
+                break
+              fi
+              if [ "$try" = 3 ]; then exit 1; fi
+              sleep "$((try * 2))"
+              numbers="$(open_issues)"
+              if [ -n "$numbers" ]; then break; fi
+            done
+          fi

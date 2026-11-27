@@ -93,6 +93,8 @@ Shared workflows run the checks, so every project's CI calls the same code:
   while a pull request's tier needs a council review.
 - [`main-health.yml`](.github/workflows/main-health.yml): `devloop main-health`, as the
   caller's last job on every push to main.
+- [`settings-check.yml`](.github/workflows/settings-check.yml): `devloop doctor --repo`
+  on a schedule; one issue while the repository's settings differ from `devloop.toml`.
 - [`metrics.yml`](.github/workflows/metrics.yml): `devloop metrics`, from a weekly
   schedule.
 

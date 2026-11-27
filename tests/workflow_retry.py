@@ -27,3 +27,8 @@ gh_api() {  # gh api; tried again after 2 s, then 4 s, on HTTP 429, a 5xx or a l
   return 1
 }
 """
+
+#: The one bare ``gh api`` call a step may make: creating the settings issue. A create is
+#: not safe to send again blindly, because GitHub may have made the issue and lost the
+#: reply. That step looks for the issue again before each new try (settings-check.yml).
+ISSUE_CREATE = 'gh api "$issues" -f title="$TITLE" -f "labels[]=${LABEL}" \\\n'

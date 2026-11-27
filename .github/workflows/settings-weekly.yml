@@ -1,0 +1,21 @@
+# dev-loop's own weekly check of its repository settings, through its shared
+# settings-check.yml, with the workflow's own token: what that token cannot read is
+# reported as "not judged".
+name: Weekly settings check
+
+'on':
+  schedule:
+    - cron: "45 6 * * 1" # Mondays 06:45 UTC
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  settings:
+    uses: ./.github/workflows/settings-check.yml
+    permissions:
+      contents: read
+      issues: write
+    with:
+      devloop: "."
