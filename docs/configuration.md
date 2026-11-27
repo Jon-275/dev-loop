@@ -119,3 +119,26 @@ its check; the lessons page and the reviewers still get the rule.
 |---|---|---|
 | `files` | Markdown and images in `docs/` | Globs of documentation files; a change to only these skips the code checks. |
 | `tests` | `["tests/*test_*.py"]` | Test files that still run on a docs-only change when they read a `.md` file. |
+
+## [gate]
+
+The merge gate: one commit status that says whether a pull request may merge, as far as
+the reviews go. In `light` and `control`, unlike the other sections, `*` stays inside one
+folder and `**` crosses folders, so `changes/*.md` is a file directly under `changes/`.
+The gate reads this table from the default branch, never from the pull request.
+
+| Key | Default | Meaning |
+|---|---|---|
+| `context` | `"Merge gate"` | The name of the commit status the gate posts. |
+| `light` | Markdown and images under `docs/`, a `.md` file directly under `changelog.dir`, and `README.md`, `CONTRIBUTING.md`, `SUPPORT.md` and `CODE_OF_CONDUCT.md` at the root | Globs of documents. A pull request that changes only these is in the light lane and waits for no reviewer. A path must match in exactly this spelling. |
+| `control` | `[]` | Globs of extra control files, compared without regard to case. They add to the built-in ones (hidden files and folders, `devloop.toml`, `devloop/`, agent instructions, build and tool settings, and the folders and files the other sections name); none can be removed. |
+| `statuses` | `labels.wait_for` and `"Review labels"` | Commit statuses that must have passed on the head in the strict lane. Only a status the workflow account (`github-actions[bot]`) posted counts. |
+| `checks` | `[]` | Check runs that must have passed in the strict lane, each `{ name, app }`: `app` is the id of the GitHub App that makes the check, and a check from another app does not count. |
+| `light_blocks` | `["Review labels"]` | Statuses that fail the light lane when they failed. The light lane does not wait for them. |
+| `trusted_bots` | `["dependabot[bot]"]` | Bot accounts whose pull requests are judged as a member's are. |
+| `max_light_files` | `100` | The most files a light pull request may change; more is strict. |
+
+`statuses` and `checks` cannot both be empty, a name can appear once across the two, and
+neither they nor `light_blocks` can name the gate's own status. `context` cannot be a status
+another devloop job posts: `Review labels`, `Council review`, a reviewer's
+`<Name> review` or a `labels.wait_for` status.

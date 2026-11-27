@@ -235,6 +235,44 @@ class Docs:
     tests: tuple[str, ...] = ("tests/*test_*.py",)
 
 
+#: What a file under ``docs/`` may end with to be a document for the merge gate.
+GATE_DOCUMENTS = ("md", "svg", "png", "jpg", "jpeg", "gif", "webp")
+#: Front pages at the root that are documents for the merge gate.
+GATE_FRONT_PAGES = ("README.md", "CONTRIBUTING.md", "SUPPORT.md", "CODE_OF_CONDUCT.md")
+
+
+def gate_light(changelog_dir: str = "changes") -> tuple[str, ...]:
+    """Return the gate's default documents: docs, changelog fragments and the front pages."""
+    docs = tuple(f"docs/**/*.{kind}" for kind in GATE_DOCUMENTS)
+    return (*docs, f"{changelog_dir}/*.md", *GATE_FRONT_PAGES)
+
+
+@dataclass(frozen=True)
+class GateCheck:
+    """One check run the merge gate needs: its name, and the id of the app that makes it."""
+
+    name: str
+    app: int
+
+
+@dataclass(frozen=True)
+class Gate:
+    """``[gate]``: the one merge status, its two lanes and the reviews the strict lane needs.
+
+    In ``light`` and ``control`` globs ``*`` stays inside one folder and ``**`` crosses
+    folders. ``control`` adds to the built-in control files; it cannot remove one.
+    """
+
+    context: str = "Merge gate"
+    light: tuple[str, ...] = gate_light()
+    control: tuple[str, ...] = ()
+    statuses: tuple[str, ...] = ("Review labels",)
+    checks: tuple[GateCheck, ...] = ()
+    light_blocks: tuple[str, ...] = ("Review labels",)
+    trusted_bots: tuple[str, ...] = ("dependabot[bot]",)
+    max_light_files: int = 100
+
+
 @dataclass(frozen=True)
 class Config:
     """A validated ``devloop.toml``."""
@@ -250,6 +288,7 @@ class Config:
     council: Council = field(default_factory=Council)
     changelog: Changelog = field(default_factory=Changelog)
     docs: Docs = field(default_factory=Docs)
+    gate: Gate = field(default_factory=Gate)
 
     @classmethod
     def default(cls, version: str) -> Config:
@@ -284,6 +323,7 @@ def parse_config(text: str) -> Config:
         "council",
         "changelog",
         "docs",
+        "gate",
     }
     for name in data:
         if name not in sections:
@@ -317,6 +357,9 @@ def parse_config(text: str) -> Config:
     log = _table(data, "changelog", {"dir", "file", "sections", "code"})
     docs = _table(data, "docs", {"files", "tests"})
     d_pr, d_rev, d_lab, d_ag, d_sk, d_co = PR(), Review(), Labels(), Agents(), Skills(), Council()
+    changelog = _changelog(log)
+    reviewers = _reviewers(_table(review, "reviewers", None))
+    wait_for = _strs(labels, "labels.wait_for", "wait_for", d_lab.wait_for)
     return Config(
         framework=Framework(version=_str(fw, "framework.version", "version", "")),
         pr=PR(
@@ -337,7 +380,7 @@ def parse_config(text: str) -> Config:
             high_effort=_strs(review, "review.high_effort", "high_effort", d_rev.high_effort),
             feedback=_optional_path(review, "review.feedback", "feedback"),
             lessons=_optional_path(review, "review.lessons", "lessons"),
-            reviewers=_reviewers(_table(review, "reviewers", None)),
+            reviewers=reviewers,
             secret_scan=_bool(review.get("secret_scan", d_rev.secret_scan), "review.secret_scan"),
             secret_allow=_strs(review, "review.secret_allow", "secret_allow", d_rev.secret_allow),
             outside_max_chars=_non_negative_int(
@@ -347,7 +390,7 @@ def parse_config(text: str) -> Config:
         ),
         labels=Labels(
             prefixes=_prefixes(labels, d_lab.prefixes),
-            wait_for=_strs(labels, "labels.wait_for", "wait_for", d_lab.wait_for),
+            wait_for=wait_for,
             wait_for_checks=_strs(
                 labels, "labels.wait_for_checks", "wait_for_checks", d_lab.wait_for_checks
             ),
@@ -379,11 +422,12 @@ def parse_config(text: str) -> Config:
             require_status=_require_status(council, d_co.require_status),
             declined=_strs(council, "council.declined", "declined", d_co.declined),
         ),
-        changelog=_changelog(log),
+        changelog=changelog,
         docs=Docs(
             files=_strs(docs, "docs.files", "files", Docs().files),
             tests=_strs(docs, "docs.tests", "tests", Docs().tests),
         ),
+        gate=_gate(_table(data, "gate", _GATE_KEYS), changelog.dir, wait_for, reviewers),
     )
 
 
@@ -614,4 +658,88 @@ def _lessons(table: Mapping[str, Any]) -> Lessons:
         doc=_rel_path(_str(table, "lessons.doc", "doc", d.doc), "lessons.doc"),
         agents=_rel_path(_str(table, "lessons.agents", "agents", d.agents), "lessons.agents"),
         repo=repo,
+    )
+
+
+_GATE_KEYS = {
+    "context",
+    "light",
+    "control",
+    "statuses",
+    "checks",
+    "light_blocks",
+    "trusted_bots",
+    "max_light_files",
+}
+
+
+def _globs(table: Mapping[str, Any], key: str, default: tuple[str, ...]) -> tuple[str, ...]:
+    """Return the gate's path globs at ``key``: each a relative path inside the project."""
+    values = _strs(table, f"gate.{key}", key, default)
+    for value in values:
+        if value.startswith("/") or "\\" in value or ".." in value.split("/"):
+            raise ConfigError(f"gate.{key}: {value!r} must be a relative path inside the project")
+    return values
+
+
+def _gate_checks(value: object) -> tuple[GateCheck, ...]:
+    """Validate ``gate.checks``: a list of ``{ name, app }`` tables, ``app`` an app's id."""
+    where = "gate.checks"
+    if not isinstance(value, list):
+        raise ConfigError(f"{where} must be a list of {{ name, app }} tables")
+    checks = []
+    for i, item in enumerate(value):
+        if not isinstance(item, dict) or set(item) != {"name", "app"}:
+            raise ConfigError(f"{where}[{i}] must have exactly name and app")
+        name = _str(item, f"{where}[{i}].name", "name", "")
+        checks.append(GateCheck(name, _pos_int(item["app"], f"{where}[{i}].app")))
+    return tuple(checks)
+
+
+#: Statuses other devloop jobs post, whatever the configuration.
+OTHER_STATUSES = ("Review labels", "Council review")
+
+
+def _gate(
+    table: Mapping[str, Any],
+    changelog_dir: str,
+    wait_for: tuple[str, ...],
+    reviewers: Mapping[str, Reviewer],
+) -> Gate:
+    """Validate ``[gate]``.
+
+    ``light`` defaults to the documents with the configured changelog folder, and
+    ``statuses`` to the reviews ``labels.wait_for`` names plus ``Review labels``. The
+    strict lane must need something, every signal has its own name, and the gate never
+    waits for its own status. Its status has a name no other devloop job posts (the
+    labels check, the council, a reviewer or a ``labels.wait_for`` status): that job
+    would write its own result under the gate's name.
+    """
+    d = Gate()
+    context = _str(table, "gate.context", "context", d.context)
+    derived = tuple(dict.fromkeys((*wait_for, *d.statuses)))
+    statuses = _strs(table, "gate.statuses", "statuses", derived)
+    checks = _gate_checks(table.get("checks", []))
+    light_blocks = _strs(table, "gate.light_blocks", "light_blocks", d.light_blocks)
+    needed = [*statuses, *(check.name for check in checks)]
+    if not needed:
+        raise ConfigError("gate.statuses and gate.checks are both empty: the strict lane needs one")
+    if len(set(needed)) != len(needed):
+        raise ConfigError("gate.statuses and gate.checks name a status or a check twice")
+    if context in (*needed, *light_blocks):
+        raise ConfigError(f"gate.context {context!r}: the gate cannot wait for its own status")
+    reviews = [f"{name.capitalize()} review" for name in (*BUILT_IN_REVIEWERS, *reviewers)]
+    if context.casefold() in {name.casefold() for name in (*OTHER_STATUSES, *wait_for, *reviews)}:
+        raise ConfigError(f"gate.context {context!r} is a status another devloop job posts")
+    return Gate(
+        context=context,
+        light=_globs(table, "light", gate_light(changelog_dir)),
+        control=_globs(table, "control", d.control),
+        statuses=statuses,
+        checks=checks,
+        light_blocks=light_blocks,
+        trusted_bots=_strs(table, "gate.trusted_bots", "trusted_bots", d.trusted_bots),
+        max_light_files=_pos_int(
+            table.get("max_light_files", d.max_light_files), "gate.max_light_files"
+        ),
     )
