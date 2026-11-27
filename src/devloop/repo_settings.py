@@ -22,11 +22,22 @@ import time
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
 
 from devloop.config import CONFIG_FILE, SKIP, ConfigError, GitHub, load_config
 from devloop.github import REPOSITORY
-from devloop.repo_read import Facts, Read, Reader, read, value_at
+from devloop.repo_read import (
+    Facts,
+    Reader,
+    Seen,
+    classic,
+    either,
+    opposite,
+    read,
+    rule,
+    rules,
+    value,
+    value_at,
+)
 from devloop.review.github import Http, http
 
 OK, DIFFERS, NOT_JUDGED, SKIPPED = "ok", "differs", "not judged", "skipped"
@@ -65,81 +76,33 @@ class Line:
         return f"{head}: expected {json.dumps(self.expected)}, found {json.dumps(self.found)}{note}"
 
 
-@dataclass(frozen=True)
-class Seen:
-    """What GitHub says about one setting: a value, or the reason it is not known."""
+def _admins(facts: Facts) -> Seen:
+    """Return whether the branch rules bind administrators too.
 
-    value: object = None
-    reason: str = ""
-
-
-def _value(read: Read, kind: type, *keys: str, hint: str = "") -> Seen:
-    """Return the value of type ``kind`` at ``keys`` of an answer, or why it is not known."""
-    if read.reason:
-        return Seen(reason=read.reason)
-    value = value_at(read.data, *keys)
-    if isinstance(value, kind):
-        return Seen(value)
-    return Seen(reason=f"GitHub's answer has no {'.'.join(keys)}{hint}")
-
-
-def _classic(facts: Facts, *keys: str, absent: bool, missing: bool | None = None) -> Seen:
-    """Return a true-or-false of classic branch protection.
-
-    ``absent`` is the answer for a branch with no protection, and ``missing`` the answer
-    when a protected branch's record leaves the first key out.
+    Classic protection that is enforced for administrators does, and so do rulesets on
+    the branch when none of them names an actor who may bypass it.
     """
+    bypass = [ruleset.get("bypass_actors") for ruleset in facts.rulesets]
+    if facts.rulesets_reason:
+        by_rulesets = Seen(reason=facts.rulesets_reason)
+    elif not all(isinstance(actors, list) for actors in bypass):
+        by_rulesets = Seen(reason="a ruleset's bypass list is not shown" + _ADMIN)
+    else:
+        by_rulesets = Seen(bool(bypass) and not any(bypass))
+    return either(classic(facts, "enforce_admins", "enabled", absent=False), by_rulesets)
+
+
+def _pull_request(facts: Facts) -> Seen:
+    """Return whether a change must come through a pull request, by either source."""
     protection = facts.protection
     if protection.absent:
-        return Seen(absent)
-    if protection.reason:
-        return Seen(reason=f"branch protection: {protection.reason}")
-    if missing is not None and value_at(protection.data, keys[0]) is None:
-        return Seen(missing)
-    return _value(protection, bool, *keys)
-
-
-def _rules(facts: Facts, kind: str) -> list[Mapping[str, Any]]:
-    """Return the parameters of every rule of type ``kind`` in the rulesets read."""
-    return [
-        params if isinstance(params := rule.get("parameters"), Mapping) else {}
-        for ruleset in facts.rulesets
-        for rule in ruleset["rules"]
-        if isinstance(rule, Mapping) and rule.get("type") == kind
-    ]
-
-
-def _rule(facts: Facts, kind: str, parameter: str = "") -> Seen:
-    """Return whether a ruleset has a rule of ``kind`` (with ``parameter`` true, if given)."""
-    if facts.rulesets_reason:
-        return Seen(reason=facts.rulesets_reason)
-    rules = _rules(facts, kind)
-    return Seen(any(r.get(parameter) is True for r in rules) if parameter else bool(rules))
-
-
-def _either(*sources: Seen) -> Seen:
-    """Return whether any source requires the rule; "no" needs every source read."""
-    if any(source.value is True for source in sources):
-        return Seen(True)
-    reasons = [source.reason for source in sources if source.reason]
-    return Seen(reason="; ".join(reasons)) if reasons else Seen(False)
-
-
-def _not(seen: Seen) -> Seen:
-    """Return the opposite of a true-or-false that was read."""
-    return seen if seen.reason else Seen(not seen.value)
-
-
-def _admins(facts: Facts) -> Seen:
-    """Return whether the branch rules bind administrators too."""
-    if not facts.protection.absent:
-        return _classic(facts, "enforce_admins", "enabled", absent=False)
-    if facts.rulesets_reason:
-        return Seen(reason=facts.rulesets_reason)
-    bypass = [ruleset.get("bypass_actors") for ruleset in facts.rulesets]
-    if not all(isinstance(actors, list) for actors in bypass):
-        return Seen(reason="a ruleset's bypass list is not shown" + _ADMIN)
-    return Seen(bool(bypass) and not any(bypass))
+        by_classic = Seen(False)
+    elif protection.reason:
+        by_classic = Seen(reason=f"branch protection: {protection.reason}")
+    else:
+        reviews = value_at(protection.data, "required_pull_request_reviews")
+        by_classic = Seen(isinstance(reviews, Mapping))
+    return either(by_classic, rule(facts, "pull_request"))
 
 
 def _checks(facts: Facts) -> Seen:
@@ -150,8 +113,8 @@ def _checks(facts: Facts) -> Seen:
     shape = "GitHub's list of required checks has an unexpected shape"
     classic = value_at(facts.protection.data, "required_status_checks")
     lists = [] if classic is None else [(value_at(classic, "checks"), "app_id")]
-    for rule in _rules(facts, "required_status_checks"):
-        lists.append((rule.get("required_status_checks"), "integration_id"))
+    for params in rules(facts, "required_status_checks"):
+        lists.append((params.get("required_status_checks"), "integration_id"))
     bound: dict[str, bool] = {}
     for listed, key in lists:
         if not isinstance(listed, list):
@@ -199,17 +162,17 @@ def _owner_lines(github: GitHub, facts: Facts) -> list[Line]:
     if want == SKIP:
         return [Line(key, SKIPPED)]
     path = ("required_pull_request_reviews", "require_code_owner_reviews")
-    classic = _classic(facts, *path, absent=False, missing=False)
-    ruleset = _rule(facts, "pull_request", "require_code_owner_review")
-    seen = _either(classic, ruleset)
+    old = classic(facts, *path, absent=False, missing=False)
+    new = rule(facts, "pull_request", "require_code_owner_review")
+    seen = either(old, new)
     if seen.reason:
         return [Line(key, NOT_JUDGED, want, reason=seen.reason)]
     lines = [Line(key, OK if seen.value == (want is True) else DIFFERS, want, seen.value)]
-    both = not (facts.protection.absent or classic.reason) and _rules(facts, "pull_request")
-    if both and classic.value != ruleset.value:
+    both = not (facts.protection.absent or old.reason) and rules(facts, "pull_request")
+    if both and old.value != new.value:
         why = (
-            f"classic branch protection says {json.dumps(classic.value)} and a ruleset says "
-            f"{json.dumps(ruleset.value)}; GitHub applies the stricter one"
+            f"classic branch protection says {json.dumps(old.value)} and a ruleset says "
+            f"{json.dumps(new.value)}; GitHub applies the stricter one"
         )
         lines.append(Line(f"{key}_sources", DIFFERS, reason=why))
     return lines
@@ -221,13 +184,13 @@ def _merge_methods(facts: Facts) -> Seen:
         return Seen(reason=facts.rulesets_reason)
     allowed = []
     for method, key in _METHODS.items():
-        seen = _value(facts.repo, bool, key, hint=_WRITE)
+        seen = value(facts.repo, bool, key, hint=_WRITE)
         if seen.reason:
             return seen
         if seen.value:
             allowed.append(method)
-    for rule in _rules(facts, "pull_request"):
-        narrowed = rule.get("allowed_merge_methods")
+    for params in rules(facts, "pull_request"):
+        narrowed = params.get("allowed_merge_methods")
         if isinstance(narrowed, list):
             allowed = [method for method in allowed if method in narrowed]
     return Seen(sorted(allowed))
@@ -249,38 +212,39 @@ def _is(seen: Seen, wanted: str) -> Seen:
 
 def check(github: GitHub, facts: Facts) -> list[Line]:
     """Return one line per setting of ``[github]``, in the order of the baseline page."""
-    force = _either(
-        _not(_classic(facts, "allow_force_pushes", "enabled", absent=True)),
-        _rule(facts, "non_fast_forward"),
+    force = either(
+        opposite(classic(facts, "allow_force_pushes", "enabled", absent=True)),
+        rule(facts, "non_fast_forward"),
     )
-    deletion = _either(
-        _not(_classic(facts, "allow_deletions", "enabled", absent=True)),
-        _rule(facts, "deletion"),
+    deletion = either(
+        opposite(classic(facts, "allow_deletions", "enabled", absent=True)),
+        rule(facts, "deletion"),
     )
-    resolved = _either(
-        _classic(facts, "required_conversation_resolution", "enabled", absent=False),
-        _rule(facts, "pull_request", "required_review_thread_resolution"),
+    resolved = either(
+        classic(facts, "required_conversation_resolution", "enabled", absent=False),
+        rule(facts, "pull_request", "required_review_thread_resolution"),
     )
     security = ("security_and_analysis", "secret_scanning", "status")
     protection = ("security_and_analysis", "secret_scanning_push_protection", "status")
     methods = github.merge_methods
     simple = [
+        ("require_pull_request", _pull_request(facts)),
         ("enforce_admins", _admins(facts)),
-        ("allow_force_pushes", _not(force)),
-        ("allow_deletions", _not(deletion)),
+        ("allow_force_pushes", opposite(force)),
+        ("allow_deletions", opposite(deletion)),
         ("conversation_resolution", resolved),
     ]
     rest = [
         (
             "default_token_read_only",
-            _is(_value(facts.workflow, str, "default_workflow_permissions"), "read"),
+            _is(value(facts.workflow, str, "default_workflow_permissions"), "read"),
         ),
-        ("sha_pinning_required", _value(facts.actions, bool, "sha_pinning_required")),
-        ("fork_pr_approval", _value(facts.fork_approval, str, "approval_policy")),
-        ("secret_scanning", _is(_value(facts.repo, str, *security, hint=_ADMIN), "enabled")),
-        ("push_protection", _is(_value(facts.repo, str, *protection, hint=_ADMIN), "enabled")),
-        ("private_vulnerability_reporting", _value(facts.reporting, bool, "enabled")),
-        ("delete_branch_on_merge", _value(facts.repo, bool, "delete_branch_on_merge", hint=_WRITE)),
+        ("sha_pinning_required", value(facts.actions, bool, "sha_pinning_required")),
+        ("fork_pr_approval", value(facts.fork_approval, str, "approval_policy")),
+        ("secret_scanning", _is(value(facts.repo, str, *security, hint=_ADMIN), "enabled")),
+        ("push_protection", _is(value(facts.repo, str, *protection, hint=_ADMIN), "enabled")),
+        ("private_vulnerability_reporting", value(facts.reporting, bool, "enabled")),
+        ("delete_branch_on_merge", value(facts.repo, bool, "delete_branch_on_merge", hint=_WRITE)),
     ]
     return [
         *_check_lines(github, _checks(facts)),
@@ -314,6 +278,9 @@ def main(
         github = load_config(root / CONFIG_FILE).github
     except ConfigError as error:
         print(f"devloop doctor: {error}", file=sys.stderr)
+        return 2
+    except (OSError, UnicodeDecodeError):
+        print(f"devloop doctor: {CONFIG_FILE} could not be read", file=sys.stderr)
         return 2
     token = env.get("GITHUB_TOKEN", "")
     if not token or not REPOSITORY.fullmatch(repo):

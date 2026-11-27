@@ -70,6 +70,7 @@ def test_only_get_is_ever_asked_of_the_client(tmp_path: Path) -> None:
 
 DIFFERENT: dict[str, tuple[str, Any, object]] = {
     "required_checks": (PROTECTION, {"required_status_checks": None}, []),
+    "require_pull_request": (PROTECTION, {"required_pull_request_reviews": None}, False),
     "enforce_admins": (PROTECTION, {"enforce_admins": on(False)}, False),
     "allow_force_pushes": (PROTECTION, {"allow_force_pushes": on(True)}, True),
     "allow_deletions": (PROTECTION, {"allow_deletions": on(True)}, True),
@@ -142,7 +143,13 @@ def test_an_unprotected_branch_is_judged_not_unreadable() -> None:
 
 
 UNREADABLE = {
-    PROTECTION: ("enforce_admins", "allow_force_pushes", "allow_deletions", "required_checks")
+    PROTECTION: (
+        "require_pull_request",
+        "enforce_admins",
+        "allow_force_pushes",
+        "allow_deletions",
+        "required_checks",
+    )
     + ("required_checks_bound", "conversation_resolution", "code_owner_review"),
     # The rules classic protection already makes stay judged: one source is enough.
     RULESETS: ("merge_methods", "required_checks", "required_checks_bound", "code_owner_review"),
@@ -298,7 +305,7 @@ def test_exit_codes_and_the_printed_report(
     out = capsys.readouterr().out.splitlines()
     assert "differs    sha_pinning_required: expected true, found false" in out
     assert 'ok         merge_methods: ["merge"]' in out
-    assert out[-1] == "acme/widgets: 14 ok, 1 differ, 0 not judged, 0 skipped"
+    assert out[-1] == "acme/widgets: 15 ok, 1 differ, 0 not judged, 0 skipped"
     answers[FORK] = refused(403, "Forbidden")
     assert _run(tmp_path, answers)[0] == 1  # a difference outranks "not judged"
     assert _run(tmp_path, {**baseline(), FORK: refused(403, "Forbidden")})[0] == 3
@@ -311,7 +318,7 @@ def test_json_prints_the_same_lines_as_records(
     code, _ = _run(tmp_path, {**baseline(), REPORTING: refused(404)}, as_json=True)
     records = json.loads(capsys.readouterr().out)
     assert code == 3
-    assert len(records) == 15
+    assert len(records) == 16
     assert records[0] == {
         "setting": "required_checks",
         "status": "ok",
@@ -338,3 +345,48 @@ def test_the_command_needs_a_token_a_repository_and_a_valid_config(
     assert cli(["doctor", "--root", str(tmp_path), "--json"]) == 2
     assert cli(["doctor", "--root", str(tmp_path), "--repo", "acme/widgets"]) == 2
     assert "t0ken" not in capsys.readouterr().out
+
+
+def test_a_ruleset_nobody_may_bypass_binds_administrators_when_classic_does_not() -> None:
+    answers = with_rulesets(baseline(), ruleset(7, {"type": "deletion"}))
+    answers[PROTECTION]["enforce_admins"] = on(False)
+    assert _lines(answers)["enforce_admins"].found is True
+    answers[f"{R}/rulesets/7"]["bypass_actors"] = [{"actor_type": "RepositoryRole"}]
+    assert _lines(answers)["enforce_admins"].status == rs.DIFFERS
+    answers[PROTECTION]["enforce_admins"] = on(True)
+    assert _lines(answers)["enforce_admins"].status == rs.OK  # classic still binds them
+
+
+def test_administrators_are_judged_from_a_ruleset_when_classic_cannot_be_read() -> None:
+    answers = with_rulesets(baseline(), ruleset(7, pull_request()))
+    answers[PROTECTION] = refused(403, "Forbidden")
+    lines = _lines(answers)
+    assert (lines["enforce_admins"].status, lines["enforce_admins"].found) == (rs.OK, True)
+    assert lines["require_pull_request"].status == rs.OK
+    answers[f"{R}/rulesets/7"]["bypass_actors"] = [{"actor_type": "Team"}]
+    line = _lines(answers)["enforce_admins"]
+    assert line.status == rs.NOT_JUDGED and "branch protection: HTTP 403" in line.reason
+
+
+def test_a_pull_request_rule_in_either_source_requires_a_pull_request() -> None:
+    bare = {**baseline(), PROTECTION: NOT_PROTECTED}
+    assert _lines(bare)["require_pull_request"].found is False
+    assert _lines(with_rulesets(bare, ruleset(7, pull_request())))["require_pull_request"].found
+
+
+@pytest.mark.parametrize("content", [None, b'[framework]\nversion = "0.11"\n\xff\xfe'])
+def test_a_config_that_cannot_be_read_is_a_start_up_error_not_a_difference(
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+    monkeypatch: pytest.MonkeyPatch,
+    content: bytes | None,
+) -> None:
+    if content is None:
+        (tmp_path / "devloop.toml").mkdir()  # a folder: reading it is an OSError
+    else:
+        (tmp_path / "devloop.toml").write_bytes(content)
+    monkeypatch.setenv("GITHUB_TOKEN", "t0ken")
+    assert cli(["doctor", "--root", str(tmp_path), "--repo", "acme/widgets"]) == 2
+    captured = capsys.readouterr()
+    assert captured.err == "devloop doctor: devloop.toml could not be read\n"
+    assert captured.out == ""

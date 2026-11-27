@@ -64,9 +64,12 @@ means the command could not start: no token, or a `devloop.toml` that is not val
 A branch rule counts when classic branch protection or an active ruleset on the default
 branch makes it. To say a rule is not there, both must be read. When the two disagree on
 code-owner review, the report says so on a line of its own, `code_owner_review_sources`.
+The rules bind administrators when classic protection is enforced for them, or when the
+rulesets on the branch name nobody who may bypass them.
 
-These keys are judged: `required_checks`, `required_checks_bound`, `enforce_admins`,
-`allow_force_pushes`, `allow_deletions`, `conversation_resolution`, `code_owner_review`,
+These keys are judged: `required_checks`, `required_checks_bound`, `require_pull_request`,
+`enforce_admins`, `allow_force_pushes`, `allow_deletions`, `conversation_resolution`,
+`code_owner_review`,
 `default_token_read_only`, `sha_pinning_required`, `fork_pr_approval`, `secret_scanning`,
 `push_protection`, `private_vulnerability_reporting`, `delete_branch_on_merge` and
 `merge_methods`. `required_checks` has no default: until the project lists its checks,
