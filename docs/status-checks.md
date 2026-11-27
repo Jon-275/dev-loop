@@ -74,9 +74,13 @@ group keyed by the pull request, with `cancel-in-progress: false`.
 posted `pending`, the commit stays pending. It also leaves a row of cancelled jobs on
 every commit, and people stop looking at red marks.
 
-If runs must overlap, as in [`labels.yml`][labels] where every reply starts one, each
-run reads again after it posts, so the last to finish leaves the status that matches
-what it read. [`gate.yml`][gate] uses the group.
+[`gate.yml`][gate] uses the group. That is what prevents the old answer.
+
+Reading again after posting is not a substitute. [`labels.yml`][labels] has no group,
+because every reply starts a run, and each run reads the threads again after it posts.
+That only lowers the chance: another run can still finish between a run's last read and
+its post, and the older answer then lands last. One run at a time for each pull request
+is the only thing that rules it out.
 
 ## 5. Judge the head as it is now
 
