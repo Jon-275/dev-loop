@@ -305,7 +305,7 @@ def test_a_comparison_that_is_not_the_pull_requests_is_not_complete(
 # --- the guards: when nothing is posted ------------------------------------------------
 
 
-@pytest.mark.parametrize("state", ["closed", "merged", ""])
+@pytest.mark.parametrize("state", ["closed", "merged"])
 def test_a_pull_request_that_is_not_open_gets_no_status(state: str) -> None:
     """Nothing is posted on a commit nobody is asking to merge."""
     hub = Hub([_file()], state=state)
@@ -360,23 +360,71 @@ def test_a_forks_head_whose_branches_cannot_be_read_ends_as_a_failure() -> None:
         assert hub.states == ["failure"]
 
 
-@pytest.mark.parametrize(
-    "pull",
-    [
-        {"head": {"repo": {"full_name": "o/r"}}},
-        {"head": None},
-        {"base": {"ref": "main", "sha": BASE, "repo": {"full_name": "o/r"}}},
-        {"base": "main"},
-    ],
-)
-def test_a_pull_request_with_no_head_or_no_default_branch_is_an_error_with_no_status(
-    pull: dict[str, Any],
-) -> None:
-    """Not "nothing is due": a required status that never arrives must show as a failed run."""
-    hub = Hub([_file()], **pull)
-    with pytest.raises(fb.FeedbackError, match="no head commit or no default branch"):
+@pytest.mark.parametrize("head", [None, {"repo": {"full_name": "o/r"}}, {"sha": 7}, {"sha": ""}])
+def test_a_pull_request_with_no_head_commit_is_an_error_with_no_status(head: object) -> None:
+    """There is no commit to post on: the failed run is all there is."""
+    hub = Hub([_file()], head=head)
+    with pytest.raises(fb.FeedbackError, match="names no head commit"):
         hub.run()
     assert hub.posted == []
+
+
+MISSING = object()
+REPO = {"full_name": "o/r", "default_branch": "main"}
+
+
+@pytest.mark.parametrize("value", [MISSING, None, 7, "", ["open"]])
+@pytest.mark.parametrize("key", ["state", "base.ref", "base.repo.default_branch"])
+@pytest.mark.parametrize("otherwise", [{}, {"state": "closed"}, {"base.ref": "release"}])
+def test_a_first_read_without_a_key_it_judges_by_is_could_not_check(
+    key: str, value: object, otherwise: dict[str, str]
+) -> None:
+    """Not "nothing is due": a status that never arrives must show as a failure and a failed run.
+
+    Even when another key says the pull request is closed or goes into another branch.
+    """
+    hub = Hub([_file()], base={"ref": "main", "sha": BASE, "repo": dict(REPO)})
+    for path, new in ({**otherwise, key: value}).items():
+        record = hub.pull
+        *parents, last = path.split(".")
+        for part in parents:
+            record = record[part]
+        if new is MISSING:
+            del record[last]
+        else:
+            record[last] = new
+    assert hub.run() == 1
+    assert hub.states == ["failure"] and hub.asked == ["repos/o/r/pulls/7"]
+
+
+@pytest.mark.parametrize("base", [None, "main", {"ref": "main", "sha": BASE, "repo": "o/r"}])
+def test_a_first_read_whose_base_is_not_a_record_is_could_not_check(base: object) -> None:
+    """A base of the wrong shape names no branch at all."""
+    hub = Hub([_file()], base=base)
+    assert hub.run() == 1
+    assert hub.states == ["failure"]
+
+
+@pytest.mark.parametrize("head", [MISSING, None, {}, {"sha": None}, {"sha": 7}, {"sha": ""}])
+def test_a_second_read_without_a_head_commit_is_could_not_check_not_a_moved_head(
+    head: object,
+) -> None:
+    """Only a record that names another commit says the head moved."""
+
+    class Second(Hub):
+        """Answers the pull request without a usable head from its second read on."""
+
+        def get(self, path: str) -> object:
+            """Return the record with its head replaced, or removed, after the first read."""
+            answer = super().get(path)
+            if not path.endswith("/pulls/7") or self.pull_reads < 2:
+                return answer
+            rest = {key: value for key, value in self.pull.items() if key != "head"}
+            return rest if head is MISSING else {**rest, "head": head}
+
+    hub = Second([_file()])
+    assert hub.run() == 1
+    assert hub.states == ["pending", "failure"]
 
 
 def test_pending_is_written_once_and_only_after_the_guards() -> None:

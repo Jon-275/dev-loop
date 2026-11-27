@@ -114,6 +114,30 @@ def test_an_invalid_gate_is_refused_with_its_key(body: str, message: str) -> Non
         parse_config(f"{BASE}[gate]\n{body}\n")
 
 
+@pytest.mark.parametrize(
+    "context",
+    [
+        "Review labels",
+        "review labels",
+        "Council review",
+        "Gemini review",
+        "Reflection review",
+        "Anthropic review",
+        "Helper review",
+        "Outside checks",
+    ],
+)
+def test_the_gate_cannot_take_the_name_of_a_status_another_job_posts(context: str) -> None:
+    """That job would write its own success under the gate's name."""
+    text = BASE + '[labels]\nwait_for = ["Outside checks"]\n'
+    text += '[review.reviewers.helper]\nkind = "openai"\n'
+    # The gate waits for none of them here, so only the name itself is the reason.
+    text += '[gate]\nstatuses = ["Some status"]\nlight_blocks = []\n'
+    with pytest.raises(ConfigError, match="a status another devloop job posts"):
+        parse_config(f'{text}context = "{context}"\n')
+    assert parse_config(f'{text}context = "May merge"\n').gate.context == "May merge"
+
+
 def test_the_gate_must_be_a_table() -> None:
     """``gate = 1`` is not a section."""
     with pytest.raises(ConfigError, match=r"\[gate\] must be a table"):
