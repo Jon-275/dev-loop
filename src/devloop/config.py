@@ -173,6 +173,7 @@ DEFAULT_SKILLS: tuple[str, ...] = (
     "split-stack",
     "stateful-change",
     "testing-and-ci",
+    "validate-model-change",
 )
 
 
