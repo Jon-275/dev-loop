@@ -200,11 +200,22 @@ def test_a_push_withdraws_the_approval_without_a_key_or_a_checkout() -> None:
                     "GH_TOKEN": "${{ github.token }}",
                     "PR_NUMBER": "${{ github.event.pull_request.number }}",
                 },
-                "run": 'gh api -X DELETE "repos/${GITHUB_REPOSITORY}/issues/${PR_NUMBER}'
-                '/labels/ai-review-approved"',
+                "run": 'if ! out="$(gh api -X DELETE "repos/${GITHUB_REPOSITORY}/issues/'
+                '${PR_NUMBER}/labels/ai-review-approved" 2>&1)"; then\n'
+                '  case "$out" in\n'
+                '    *"HTTP 404"*) echo "The label was already removed." ;;\n'
+                '    *) echo "$out" >&2; exit 1 ;;\n'
+                "  esac\n"
+                "fi\n",
             }
         ],
     }
+    # No keyed job waits for it: on a push the gate never reads the label, so an outside
+    # pull request waits whether or not the label is still there.
+    caller = _load("review-trusted.yml")
+    assert all("unapprove" not in job.get("needs", []) for job in caller["jobs"].values())
+    decide = _load("review.yml")["jobs"]["gate"]["steps"][0]
+    assert "labels" not in str(decide["env"]).lower().replace("approval_label", "")
     shared = _on(_load("review.yml"))["workflow_call"]["inputs"]["approval_label"]
     assert shared["default"] == "ai-review-approved"
 
