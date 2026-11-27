@@ -63,6 +63,8 @@ Any workflow in a same-repository pull request can post any commit status, inclu
 required one such as `Gemini review`. A required status is only as trustworthy as the
 workflows that can run. Protect `.github/workflows/` with a `CODEOWNERS` entry and
 require code-owner review, so a pull request cannot add a workflow that posts a fake pass.
+With one maintainer that review cannot be required; [GitHub settings](github-settings.md)
+says what to do then, and lists the other repository settings this model relies on.
 
 ## A status belongs to a commit
 
