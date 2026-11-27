@@ -17,6 +17,10 @@
 # devloop, devloop.toml and the role cards come from the default branch's checkout,
 # never the pull request's; the head and its changed files are read from GitHub. The job
 # holds no secret and writes one commit status. A read that fails posts nothing.
+#
+# A status belongs to a commit, not to a pull request: devloop posts nothing for a fork's
+# pull request whose head is also the head of a branch in this repository, so it cannot
+# replace that branch's status (docs/security.md). No shell step here posts a status.
 name: Council review
 
 on:

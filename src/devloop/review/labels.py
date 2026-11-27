@@ -27,6 +27,7 @@ from typing import Any
 from urllib.parse import quote
 
 from devloop.review import feedback as fb
+from devloop.review import status_guard as guard
 from devloop.review.github import GITHUB_API, Http, http
 
 #: The commit status this check posts.
@@ -156,9 +157,14 @@ class Github:
             raise fb.FeedbackError(f"GitHub's reply to GET {url.split('?')[0]} is not an object")
         return data
 
-    def head(self, number: int) -> str:
-        """Return the pull request's current head commit."""
-        return str(self.get(f"{GITHUB_API}/repos/{self.repo}/pulls/{number}")["head"]["sha"])
+    def head(self, number: int) -> guard.Head:
+        """Return the pull request's current head commit and whether its status is due.
+
+        Raises:
+            FeedbackError: GitHub could not be read, so the status could not be checked.
+
+        """
+        return guard.read_head(self.repo, number, self.token, send=self.send, sleep=self.sleep)
 
     def reviews(
         self, sha: str, wait_for_checks: Sequence[str]
@@ -213,6 +219,10 @@ def run(
     stands while this run checks. A failed read posts a failure and re-raises. When the
     pull request itself cannot be read, the failure goes on ``event_sha``, if any.
 
+    A fork's pull request whose head is also the head of a branch in this repository gets
+    no status at all, pending or verdict (:mod:`devloop.review.status_guard`): the run
+    says so and returns 0. The head is read once, and the commit judged is the one posted on.
+
     Several runs can check one pull request at once (each reply starts one). After posting,
     the run reads again and posts once more if the answer has changed, so the run that
     finishes last leaves the status that matches the threads as they then are.
@@ -223,12 +233,16 @@ def run(
     """
     unreadable = "Could not read the review threads; re-run the check"
     try:
-        head = gh.head(number)
+        pull = gh.head(number)
     except fb.FeedbackError:
         if event_sha:
             gh.post(event_sha, "failure", unreadable, run_url)
             write_outputs(outputs, sha=event_sha, posted="true")
         raise
+    if not pull.due:
+        print(guard.notice(CONTEXT, number, pull.sha))
+        return 0
+    head = pull.sha
     gh.post(head, "pending", "Checking the review threads for labels", run_url)
     write_outputs(outputs, sha=head)
 

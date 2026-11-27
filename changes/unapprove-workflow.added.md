@@ -1,0 +1,1 @@
+- **`unapprove.yml`, a shared workflow that removes the approval label on every push.** Approval covers one head, and each project had to write this job itself. It holds no key and checks out nothing, and it succeeds when another push has already removed the label.

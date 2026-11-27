@@ -1,0 +1,60 @@
+# Withdraws a maintainer's approval when a pull request gets a new head, for projects
+# that call review.yml with `gate: members` (the default). Approval covers one head: a
+# push after the label is a new head that nobody has looked at, so the label goes and
+# the maintainer can add it again once they have read the new commits.
+#
+# Call it from the same pull_request_target workflow as the reviews:
+#
+#   jobs:
+#     unapprove:
+#       uses: Jon-275/dev-loop/.github/workflows/unapprove.yml@<tag>
+#       permissions:
+#         pull-requests: write
+#
+# It holds no key, checks out nothing and installs nothing. The reviews do not wait
+# for it: on a push the gate never reads the label, so an outside pull request waits
+# whether or not the label is still there.
+name: Withdraw approval
+
+on:
+  workflow_call:
+    inputs:
+      approval_label:
+        description: The label to remove; the same one review.yml waits for
+        required: false
+        type: string
+        default: ai-review-approved
+
+permissions:
+  contents: read
+
+jobs:
+  unapprove:
+    name: Withdraw approval on a new push
+    if: >-
+      github.event.action == 'synchronize'
+      && contains(github.event.pull_request.labels.*.name, inputs.approval_label)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions:
+      pull-requests: write
+    steps:
+      - name: Remove the approval label
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          APPROVAL_LABEL: ${{ inputs.approval_label }}
+        # Two quick pushes both see the label; the second finds it gone, which is the
+        # state wanted. Any other failure (permissions, an outage) fails the job.
+        run: |
+          case "$PR_NUMBER" in
+            ''|*[!0-9]*) echo "::error title=Withdraw approval::no pull request number"; exit 1 ;;
+          esac
+          label="$(jq -rn --arg label "$APPROVAL_LABEL" '$label|@uri')"
+          url="repos/${GITHUB_REPOSITORY}/issues/${PR_NUMBER}/labels/${label}"
+          if ! out="$(gh api -X DELETE "$url" 2>&1)"; then
+            case "$out" in
+              *"HTTP 404"*) echo "The label was already removed." ;;
+              *) echo "$out" >&2; exit 1 ;;
+            esac
+          fi
