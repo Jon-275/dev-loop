@@ -3,7 +3,7 @@
 ## 1. Install and initialise
 
 ```bash
-uv tool install git+https://github.com/Jon-275/dev-loop@v0.11.0
+uv tool install git+https://github.com/Jon-275/dev-loop@v0.12.0
 devloop init
 ```
 
@@ -24,7 +24,9 @@ Pin each call to a release tag or commit. Each workflow's header shows the job t
 
 | Workflow | Trigger in the caller | What it does |
 |---|---|---|
-| `pr-hygiene.yml` | `pull_request` | advisory doctor, size, changelog, docs-only detection |
+| `pr-validation.yml` | code events and pushes to the default branch | doctor, changelog, docs-only detection |
+| `pr-size.yml` | a separate `pull_request` caller, including label changes | size and the approved exception |
+| `pr-hygiene.yml` | `pull_request` | combined advisory hygiene for existing callers |
 | `drift-check.yml` | separate `pull_request` workflow on code and review lifecycle events | repository drift verdict for branch protection |
 | `review.yml` | `pull_request_target` | one job per model reviewer ([model reviews](review.md)) |
 | `labels.yml` | after the review jobs, and on review replies | the `Review labels` status |
@@ -73,7 +75,16 @@ the dedicated caller. On a disposable PR, prove that an intentional drift failur
 failed when a label is added and removed, then prove that a repaired revision passes.
 Record the check name and source reported by GitHub. Require the verified check before
 retiring any previous drift requirement. Audit other required checks for the same skip
-behavior. [GitHub's required status checks guide](https://docs.github.com/en/pull-requests/how-tos/merge-and-close-pull-requests/troubleshooting-required-status-checks)
+behavior. If older code CI also handles label events, move its size check into one
+separate caller for both the normal PR events and label changes. Keep label events out
+of code CI and use `pr-validation.yml` there. Use caller job ID `hygiene` in both
+workflows to preserve the reported check names. Use a single publisher for
+`hygiene / PR size`, so the size exception can update the current result.
+See the [code caller](https://github.com/Jon-275/dev-loop/blob/main/.github/workflows/ci.yml)
+and [size caller](https://github.com/Jon-275/dev-loop/blob/main/.github/workflows/repository-pr-size.yml).
+In the rehearsal, verify that only size runs on label changes and that the failing
+code, doctor, or changelog verdict stays on the same check run. Use the actual size
+exception label to verify that size can pass and fail again on the same PR head. [GitHub's required status checks guide](https://docs.github.com/en/pull-requests/how-tos/merge-and-close-pull-requests/troubleshooting-required-status-checks)
 
 ## 5. Optional commit attribution
 
