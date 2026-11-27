@@ -187,7 +187,7 @@ def test_an_outside_pull_request_here_waits_for_a_maintainer_s_label() -> None:
     assert _on(_load("review.yml"))["workflow_call"]["inputs"]["gate"]["default"] == "members"
     assert caller["jobs"]["unapprove"] == {
         "uses": "./.github/workflows/unapprove.yml",
-        "permissions": {"pull-requests": "write"},
+        "permissions": {**_load("unapprove.yml")["permissions"], "pull-requests": "write"},
     }
     # No keyed job waits for it: on a push the gate never reads the label, so an outside
     # pull request waits whether or not the label is still there.
