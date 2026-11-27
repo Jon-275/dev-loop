@@ -64,8 +64,14 @@ means the command could not start: no token, or a `devloop.toml` that is not val
 A branch rule counts when classic branch protection or an active ruleset on the default
 branch makes it. To say a rule is not there, both must be read. When the two disagree on
 code-owner review, the report says so on a line of its own, `code_owner_review_sources`.
-The rules bind administrators when classic protection is enforced for them, or when the
-rulesets on the branch name nobody who may bypass them.
+`enforce_admins` is ok only when every source that supplies a rule the project expects
+holds administrators to it: classic protection with "do not allow bypassing" on, and each
+ruleset with an empty bypass list. The rules counted are the required checks, the pull
+request, resolved conversations, the blocks on force pushes and deletion, and code-owner
+review when it is expected. A ruleset that requires the checks and lets administrators
+bypass it differs, whatever classic protection says, and the line names it. A source that
+supplies none of those rules does not count. A source that cannot be read leaves the
+setting not judged.
 
 These keys are judged: `required_checks`, `required_checks_bound`, `require_pull_request`,
 `enforce_admins`, `allow_force_pushes`, `allow_deletions`, `conversation_resolution`,

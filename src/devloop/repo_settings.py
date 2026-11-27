@@ -20,11 +20,12 @@ import json
 import sys
 import time
 from collections.abc import Callable, Mapping
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path
 
 from devloop.config import CONFIG_FILE, SKIP, ConfigError, GitHub, load_config
 from devloop.github import REPOSITORY
+from devloop.repo_admins import admins
 from devloop.repo_read import (
     Facts,
     Reader,
@@ -76,20 +77,11 @@ class Line:
         return f"{head}: expected {json.dumps(self.expected)}, found {json.dumps(self.found)}{note}"
 
 
-def _admins(facts: Facts) -> Seen:
-    """Return whether the branch rules bind administrators too.
-
-    Classic protection that is enforced for administrators does, and so do rulesets on
-    the branch when none of them names an actor who may bypass it.
-    """
-    bypass = [ruleset.get("bypass_actors") for ruleset in facts.rulesets]
-    if facts.rulesets_reason:
-        by_rulesets = Seen(reason=facts.rulesets_reason)
-    elif not all(isinstance(actors, list) for actors in bypass):
-        by_rulesets = Seen(reason="a ruleset's bypass list is not shown" + _ADMIN)
-    else:
-        by_rulesets = Seen(bool(bypass) and not any(bypass))
-    return either(classic(facts, "enforce_admins", "enabled", absent=False), by_rulesets)
+def _admin_line(github: GitHub, facts: Facts) -> Line:
+    """Judge whether every source of an expected rule holds administrators to it."""
+    seen, note = admins(github, facts)
+    line = _judge("enforce_admins", github.enforce_admins, seen)
+    return replace(line, reason=note) if note and line.status in (OK, DIFFERS) else line
 
 
 def _pull_request(facts: Facts) -> Seen:
@@ -228,8 +220,6 @@ def check(github: GitHub, facts: Facts) -> list[Line]:
     protection = ("security_and_analysis", "secret_scanning_push_protection", "status")
     methods = github.merge_methods
     simple = [
-        ("require_pull_request", _pull_request(facts)),
-        ("enforce_admins", _admins(facts)),
         ("allow_force_pushes", opposite(force)),
         ("allow_deletions", opposite(deletion)),
         ("conversation_resolution", resolved),
@@ -248,6 +238,8 @@ def check(github: GitHub, facts: Facts) -> list[Line]:
     ]
     return [
         *_check_lines(github, _checks(facts)),
+        _judge("require_pull_request", github.require_pull_request, _pull_request(facts)),
+        _admin_line(github, facts),
         *(_judge(key, getattr(github, key), seen) for key, seen in simple),
         *_owner_lines(github, facts),
         *(_judge(key, getattr(github, key), seen) for key, seen in rest),
