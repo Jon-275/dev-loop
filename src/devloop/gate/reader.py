@@ -7,7 +7,9 @@ Invariants:
 1. No status is written unless the pull request is open, goes into the repository's
    default branch, and its status is due by :mod:`devloop.review.status_guard` (not a
    fork's pull request whose head a branch of the base repository also heads). The
-   one exception is a ``failure`` when that last guard could not be read.
+   one exception is a ``failure`` when one of the three could not be read: a record
+   without its state, base branch or default branch is "could not check", never
+   "nothing is due".
 2. :func:`evaluate` is the only writer of ``pending``, and writes it only after the guards.
 3. Whatever cannot be read is a ``failure`` on the head and exit code 1, never a pass
    and never an earlier success left standing. A pull request that cannot be read at
@@ -141,24 +143,28 @@ def evaluate(hub: GitHub, repo: str, number: int, gate: Gate) -> int:
     workflow closes it by running one evaluation of a pull request at a time.
 
     Raises:
-        FeedbackError: the pull request could not be read, or a failure could not be
-            posted.
+        FeedbackError: the pull request could not be read or names no head commit, or a
+            failure could not be posted.
 
     """
     pull = hub.get(f"repos/{repo}/pulls/{number}")
     if not isinstance(pull, dict):
         raise fb.FeedbackError("the pull request could not be read")
-    if pull.get("state") != "open":
-        print(f"Pull request {number} is not open; nothing posted.")
-        return 0
-    default, sha = _field(pull, "base", "repo", "default_branch"), _field(pull, "head", "sha")
-    if not isinstance(default, str) or not default or not isinstance(sha, str) or not sha:
-        raise fb.FeedbackError("the pull request names no head commit or no default branch")
-    if _field(pull, "base", "ref") != default:
-        print(f"Pull request {number} does not go into {default}; nothing posted.")
-        return 0
+    sha = _field(pull, "head", "sha")
+    if not isinstance(sha, str) or not sha:
+        raise fb.FeedbackError("the pull request names no head commit")
     posted: rules.Verdict | None = None
     try:
+        state, ref = _field(pull, "state"), _field(pull, "base", "ref")
+        default = _field(pull, "base", "repo", "default_branch")
+        if not all(isinstance(value, str) and value for value in (state, ref, default)):
+            raise fb.FeedbackError("the pull request names no state, base or default branch")
+        if state != "open":
+            print(f"Pull request {number} is not open; nothing posted.")
+            return 0
+        if ref != default:
+            print(f"Pull request {number} does not go into {default}; nothing posted.")
+            return 0
         where = f"repos/{repo}/commits/{sha}/branches-where-head"
         if not guard.head_of(pull, number, lambda _: hub.get(where)).due:
             print(guard.notice(gate.context, number, sha))
@@ -171,7 +177,10 @@ def evaluate(hub: GitHub, repo: str, number: int, gate: Gate) -> int:
             again = hub.get(f"repos/{repo}/pulls/{number}")
             if not isinstance(again, dict):
                 raise fb.FeedbackError("the pull request could not be read again")
-            if _field(again, "head", "sha") != sha:
+            now = _field(again, "head", "sha")
+            if not isinstance(now, str) or not now:
+                raise fb.FeedbackError("the pull request, read again, names no head commit")
+            if now != sha:
                 print("The head moved while the gate was reading; its own run judges it.")
                 return 0
             if verdict == posted:
