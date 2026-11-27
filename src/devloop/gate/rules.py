@@ -297,13 +297,15 @@ def is_trusted(pull: Mapping[str, Any], repo: str, trusted_bots: Sequence[str]) 
     GitHub's own word on the author: the owner, a member or a collaborator. Or a bot,
     one in ``trusted_bots`` or the repository's own workflow account, whose pull request
     comes from a branch of ``repo`` itself: the same login on a fork's head is not trusted.
+    Repository names are compared without regard to case, as GitHub does.
     """
     if pull.get("author_association") in TRUSTED_ASSOCIATIONS:
         return True
     user = pull.get("user") or {}
     head_repo = ((pull.get("head") or {}).get("repo") or {}).get("full_name")
     named = user.get("login") in (BOT_LOGIN, *trusted_bots)
-    return user.get("type") == "Bot" and named and head_repo == repo
+    same = isinstance(head_repo, str) and head_repo.casefold() == repo.casefold()
+    return user.get("type") == "Bot" and named and same
 
 
 def status_signal(statuses: Sequence[Mapping[str, Any]], context: str) -> Signal:

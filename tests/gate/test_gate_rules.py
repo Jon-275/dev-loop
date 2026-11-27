@@ -650,3 +650,12 @@ def test_a_bot_is_trusted_only_when_the_project_lists_it() -> None:
     dependabot = {**pull, "user": {"login": "dependabot[bot]", "type": "Bot"}}
     assert gate.is_trusted(dependabot, "o/r", ()) is False
     assert gate.is_trusted({}, "o/r", GATE.trusted_bots) is False
+
+
+def test_a_repository_name_is_compared_without_regard_to_case() -> None:
+    """GitHub ignores case in a repository's name, and the command's ``--repo`` is as typed."""
+    user = {"login": "helper[bot]", "type": "Bot"}
+    pull = {"author_association": "NONE", "user": user, "head": {"repo": {"full_name": "Acme/App"}}}
+    assert gate.is_trusted(pull, "acme/app", ("helper[bot]",)) is True
+    assert gate.is_trusted({**pull, "user": {**user, "login": BOT}}, "ACME/APP", ()) is True
+    assert gate.is_trusted(pull, "acme/apps", ("helper[bot]",)) is False
