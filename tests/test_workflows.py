@@ -8,6 +8,7 @@ from typing import Any
 
 import pytest
 import yaml
+from workflow_retry import GH_API
 
 WORKFLOWS = Path(__file__).resolve().parents[1] / ".github" / "workflows"
 FILES = sorted(WORKFLOWS.glob("*.yml"))
@@ -265,18 +266,21 @@ def test_an_outside_pull_request_here_waits_for_a_maintainer_s_label() -> None:
     assert "labels" not in str(decide["env"]).lower().replace("approval_label", "")
 
 
-UNAPPROVE = """case "$PR_NUMBER" in
+UNAPPROVE = (
+    GH_API
+    + """case "$PR_NUMBER" in
   ''|*[!0-9]*) echo "::error title=Withdraw approval::no pull request number"; exit 1 ;;
 esac
 label="$(jq -rn --arg label "$APPROVAL_LABEL" '$label|@uri')"
 url="repos/${GITHUB_REPOSITORY}/issues/${PR_NUMBER}/labels/${label}"
-if ! out="$(gh api -X DELETE "$url" 2>&1)"; then
+if ! out="$(gh_api -X DELETE "$url" 2>&1)"; then
   case "$out" in
     *"HTTP 404"*) echo "The label was already removed." ;;
     *) echo "$out" >&2; exit 1 ;;
   esac
 fi
 """
+)
 
 
 def test_a_push_withdraws_the_approval_without_a_key_or_a_checkout() -> None:

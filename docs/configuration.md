@@ -47,6 +47,7 @@ to `[pr]`, `[docs]` or `[changelog]` therefore takes effect from the next pull r
 | `secret_scan` | `true` | Refuse to send a diff or a file that holds a likely secret (a provider's key format or a private-key header). The check fails and names the file, the line and the kind of key, never the text. |
 | `secret_allow` | `[]` | Globs of files the secret scan skips, for test values that only look like keys. |
 | `outside_max_chars` | `150000` | The most characters of diff and file contents an approved outside pull request may send (`gate: members`). `0`: no limit. |
+| `max_rounds` | `0` | The most reviews one reviewer gives one pull request. At the cap the next run sends nothing and its status fails and says so; a maintainer adds the `review-again` label for one more ([a cap on reviews](review.md#a-cap-on-reviews)). `0`: no cap. |
 
 ### [review.reviewers.NAME]
 
