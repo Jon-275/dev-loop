@@ -1,4 +1,4 @@
-"""The merge gate's rules: which lane a pull request is in.
+"""The merge gate's rules: which lane a pull request is in, and whether it may merge.
 
 Nothing here reads a file or the network.
 
@@ -13,20 +13,28 @@ Invariants:
    path, a file that is not a regular file, a rename from elsewhere) is strict.
 3. A control file is never a document, whatever ``gate.light`` says, and configuration
    can add control files but never remove a built-in one.
+4. A strict pull request passes only when every needed signal passed. A signal that is
+   missing is waited for, never a pass.
+5. A change to a control file by an author who is not trusted never passes.
 """
 
 from __future__ import annotations
 
 import dataclasses
+import enum
 import re
-from collections.abc import Collection, Sequence
+from collections.abc import Collection, Mapping, Sequence
 from dataclasses import dataclass
 from functools import cache
+from typing import Any
 
-from devloop.config import Config, Gate
+from devloop.config import Config, Gate, GateCheck
+from devloop.review.model import BOT_LOGIN, TRUSTED_ASSOCIATIONS
 
 #: A longer path is read as strict.
 MAX_PATH = 200
+#: The most characters of a commit status description GitHub shows.
+MAX_DESCRIPTION = 140
 #: Folders devloop reads its rules from. Compared without regard to case.
 CONTROL_FOLDERS = ("devloop",)
 #: Single control files, from the root. Compared without regard to case.
@@ -64,6 +72,14 @@ KNOWN_CHANGES = ("added", "modified", "removed", "renamed")
 REGULAR = "100644"
 
 
+class Signal(enum.Enum):
+    """Where one review stands on the head."""
+
+    PASSED = "passed"
+    FAILED = "failed"
+    WAITING = "waiting"
+
+
 @dataclass(frozen=True)
 class ChangedFile:
     """One changed file of a pull request.
@@ -97,6 +113,14 @@ class Lane:
     light: bool
     control: bool
     reason: str
+
+
+@dataclass(frozen=True)
+class Verdict:
+    """What the gate posts: a commit status state and its one-line description."""
+
+    state: str
+    description: str
 
 
 def rules(config: Config) -> Gate:
@@ -218,3 +242,104 @@ def lane(
         if folded.get(file.path.casefold(), file.path) != file.path:
             return Lane(False, False, "a path that differs from an existing one only by case")
     return Lane(True, False, "documents only")
+
+
+def _line(start: str, names: Sequence[str]) -> str:
+    """Return ``start`` and the names, or their count when the names would not fit."""
+    line = f"{start} {', '.join(names)}"
+    if len(line) <= MAX_DESCRIPTION:
+        return line
+    return f"{start} {len(names)} reviews (the run's log names each)"
+
+
+def decide(
+    found: Lane, *, trusted: bool, needed: Mapping[str, Signal], blocking: Mapping[str, Signal]
+) -> Verdict:
+    """Return the verdict for a pull request in lane ``found``.
+
+    Args:
+        found: The pull request's lane.
+        trusted: The author is one :func:`is_trusted` names.
+        needed: Every signal the strict lane needs (``gate.statuses`` and
+            ``gate.checks``), by name.
+        blocking: The ``gate.light_blocks`` statuses, by name: a failed one fails the
+            light lane too.
+
+    """
+    if found.control and not trusted:
+        return Verdict(
+            "failure", f"Not judged ({found.reason}): a maintainer re-opens it from a branch here"
+        )
+    if found.light:
+        failed = [name for name, signal in blocking.items() if signal is Signal.FAILED]
+        if failed:
+            return Verdict("failure", _line("Light lane: failed:", failed))
+        return Verdict("success", "Light lane (documents only): no outside review needed")
+    failed = [name for name, signal in needed.items() if signal is Signal.FAILED]
+    if failed:
+        return Verdict("failure", _line(f"Strict lane ({found.reason}): failed:", failed))
+    waiting = [name for name, signal in needed.items() if signal is Signal.WAITING]
+    if waiting:
+        return Verdict("pending", _line(f"Strict lane ({found.reason}): waiting for", waiting))
+    if not needed:  # the configuration refuses this; nothing to wait for is never a pass
+        return Verdict("pending", f"Strict lane ({found.reason}): no review is configured")
+    return Verdict("success", f"Strict lane ({found.reason}): reviews complete")
+
+
+def is_trusted(pull: Mapping[str, Any], repo: str, trusted_bots: Sequence[str]) -> bool:
+    """Return whether the author's pull requests are judged as the owner's are.
+
+    GitHub's own word on the author: the owner, a member or a collaborator; or a bot in
+    ``trusted_bots``; or the repository's own workflows, whose pull requests come from a
+    branch of ``repo`` itself (a fork cannot open one as that account).
+    """
+    user = pull.get("user") or {}
+    login, is_bot = str(user.get("login") or ""), user.get("type") == "Bot"
+    if pull.get("author_association") in TRUSTED_ASSOCIATIONS or (is_bot and login in trusted_bots):
+        return True
+    head_repo = ((pull.get("head") or {}).get("repo") or {}).get("full_name")
+    return is_bot and login == BOT_LOGIN and head_repo == repo
+
+
+def status_signal(statuses: Sequence[Mapping[str, Any]], context: str) -> Signal:
+    """Return the newest status named ``context`` that the workflow account posted, as a signal.
+
+    A status from any other account is as if it were missing.
+    """
+    own = [
+        status
+        for status in statuses
+        if status.get("context") == context
+        and (status.get("creator") or {}).get("login") == BOT_LOGIN
+    ]
+    if not own:
+        return Signal.WAITING
+    state = max(own, key=lambda status: int(status.get("id") or 0)).get("state")
+    if state == "success":
+        return Signal.PASSED
+    return Signal.WAITING if state == "pending" else Signal.FAILED
+
+
+def check_signal(runs: Sequence[Mapping[str, Any]], check: GateCheck, *, trusted: bool) -> Signal:
+    """Return the newest run of ``check``, as a signal.
+
+    Only a run of that name made by the check's own app counts. A run the app skipped
+    passes for a trusted author, as a required check does; for any other author it is
+    not a review, so the gate keeps waiting.
+    """
+    own = [
+        run
+        for run in runs
+        if run.get("name") == check.name and (run.get("app") or {}).get("id") == check.app
+    ]
+    if not own:
+        return Signal.WAITING
+    newest = max(own, key=lambda run: int(run.get("id") or 0))
+    if newest.get("status") != "completed":
+        return Signal.WAITING
+    conclusion = newest.get("conclusion")
+    if conclusion == "success":
+        return Signal.PASSED
+    if conclusion in ("neutral", "skipped"):
+        return Signal.PASSED if trusted else Signal.WAITING
+    return Signal.FAILED

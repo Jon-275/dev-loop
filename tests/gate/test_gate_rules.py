@@ -1,8 +1,9 @@
-"""The merge gate's rules: the lane of a pull request.
+"""The merge gate's rules: the lane of a pull request, the verdict, and who and what counts.
 
 Invariants (devloop.gate.rules). Adding a file never makes a strict pull request light. A
 path no rule names is strict. Every doubt (an incomplete list, an odd path, a file that
-is not a regular file, a rename from elsewhere) is strict.
+is not a regular file, a rename from elsewhere) is strict. A strict pull request passes
+only when every needed signal passed.
 """
 
 from __future__ import annotations
@@ -14,13 +15,17 @@ import re
 import subprocess
 from collections.abc import Collection
 from pathlib import Path
+from typing import Any
 
 import pytest
 
-from devloop.config import Config, parse_config
+from devloop.config import Config, GateCheck, parse_config
 from devloop.gate import rules as gate
 
 ROOT = Path(__file__).resolve().parents[2]
+Sig = gate.Signal
+PASSED, FAILED, WAITING = Sig.PASSED, Sig.FAILED, Sig.WAITING
+BOT = "github-actions[bot]"
 #: The rules of a project that only adopts devloop.
 GATE = gate.rules(Config.default("0.1"))
 
@@ -393,3 +398,209 @@ def test_a_path_made_of_anything_is_never_light_unless_the_allow_list_names_it()
                 and name.isascii()
                 and name.endswith(DOCUMENTS)
             ), name
+
+
+# --- the verdict -----------------------------------------------------------------------
+
+LIGHT_LANE = gate.Lane(light=True, control=False, reason="documents only")
+STRICT = gate.Lane(light=False, control=False, reason="core")
+STRICT_CONTROL = gate.Lane(light=False, control=True, reason="control files")
+SIGNALS = (PASSED, FAILED, WAITING)
+ALL = [(a, b, c) for a in SIGNALS for b in SIGNALS for c in SIGNALS]
+both = pytest.mark.parametrize("trusted", [True, False])
+every = pytest.mark.parametrize(("alpha", "outside", "labels"), ALL)
+
+
+def _decide(lane: gate.Lane, trusted: bool, alpha: Sig, outside: Sig, labels: Sig) -> gate.Verdict:
+    """Return the verdict with three reviews needed; the labels check blocks the light lane."""
+    needed = {"Alpha review": alpha, "Outside Review": outside, "Review labels": labels}
+    return gate.decide(lane, trusted=trusted, needed=needed, blocking={"Review labels": labels})
+
+
+@both
+@every
+def test_a_strict_pull_request_passes_only_when_every_review_passed(
+    trusted: bool, alpha: Sig, outside: Sig, labels: Sig
+) -> None:
+    """Any failure is a failure; else anything still waited for is pending."""
+    verdict = _decide(STRICT, trusted, alpha, outside, labels)
+    given = (alpha, outside, labels)
+    expected = "failure" if FAILED in given else "pending" if WAITING in given else "success"
+    assert verdict.state == expected
+    assert len(verdict.description) <= 140
+
+
+@both
+@every
+def test_a_light_pull_request_needs_no_review_but_never_hides_a_finding(
+    trusted: bool, alpha: Sig, outside: Sig, labels: Sig
+) -> None:
+    """Documents merge without the reviewers; a finding thread still needs its label."""
+    verdict = _decide(LIGHT_LANE, trusted, alpha, outside, labels)
+    assert verdict.state == ("failure" if labels is FAILED else "success")
+
+
+@every
+def test_an_outside_authors_change_to_a_control_file_never_passes(
+    alpha: Sig, outside: Sig, labels: Sig
+) -> None:
+    """Its checks ran its own copy of the rules: a maintainer re-opens it from a branch here."""
+    verdict = _decide(STRICT_CONTROL, False, alpha, outside, labels)
+    assert verdict == gate.Verdict(
+        "failure", "Not judged (control files): a maintainer re-opens it from a branch here"
+    )
+
+
+def test_a_trusted_authors_change_to_a_control_file_is_an_ordinary_strict_one() -> None:
+    """A maintainer changes workflows through the strict lane."""
+    assert _decide(STRICT_CONTROL, True, PASSED, PASSED, PASSED).state == "success"
+    assert _decide(STRICT_CONTROL, True, PASSED, WAITING, PASSED).state == "pending"
+
+
+def test_the_verdict_names_what_failed_and_what_is_waited_for() -> None:
+    """A contributor reads the status line and knows what to do."""
+    failed = _decide(STRICT, True, FAILED, PASSED, FAILED).description
+    assert failed == "Strict lane (core): failed: Alpha review, Review labels"
+    waiting = _decide(STRICT, True, PASSED, WAITING, WAITING).description
+    assert waiting == "Strict lane (core): waiting for Outside Review, Review labels"
+    light = _decide(LIGHT_LANE, False, PASSED, PASSED, FAILED).description
+    assert light == "Light lane: failed: Review labels"
+
+
+def test_no_blocking_status_and_no_needed_review_are_never_a_reason_to_fail_or_pass() -> None:
+    """A light lane nothing blocks passes; a strict lane that needs nothing still waits."""
+    assert gate.decide(LIGHT_LANE, trusted=False, needed={}, blocking={}).state == "success"
+    assert gate.decide(STRICT, trusted=True, needed={}, blocking={}).state == "pending"
+
+
+def test_no_status_line_is_longer_than_github_shows() -> None:
+    """Every lane reason, every author and every mix of signals fits; many names are counted."""
+    reasons = [
+        "no changed file could be read",
+        "the list of changed files is not complete",
+        "control files change",
+        f"more than {GATE.max_light_files} files change",
+        "a kind of change the gate does not know",
+        "a rename and its earlier name do not agree",
+        "files other than documents change",
+        "a document that is not a regular file",
+        "a path that differs from an existing one only by case",
+        "two changed paths differ only by case",
+    ]
+    for reason, control, trusted, signal in itertools.product(
+        reasons, (False, True), (False, True), SIGNALS
+    ):
+        found = gate.Lane(light=False, control=control, reason=reason)
+        assert len(_decide(found, trusted, signal, signal, signal).description) <= 140
+        many = {f"A reviewer with a long name {i}": signal for i in range(12)}
+        verdict = gate.decide(found, trusted=True, needed=many, blocking={})
+        assert len(verdict.description) <= 140
+        if signal is not PASSED:
+            assert "12 reviews (the run's log names each)" in verdict.description
+
+
+# --- reading the reviews ---------------------------------------------------------------
+
+
+def _status(context: str, state: str, creator: str = BOT, n: int = 1) -> dict[str, Any]:
+    """Return one commit status as the API returns it; a higher ``n`` is newer."""
+    return {"context": context, "state": state, "creator": {"login": creator}, "id": n}
+
+
+def test_the_newest_status_from_the_workflow_account_is_the_one_read() -> None:
+    """A status posted by anyone else is as if it were missing."""
+    statuses = [
+        _status("Alpha review", "success", n=3),
+        _status("Alpha review", "failure", n=2),
+        _status("Review labels", "success", creator="someone-else", n=9),
+        _status("Review labels", "pending", n=4),
+    ]
+    assert gate.status_signal(statuses, "Alpha review") is PASSED
+    assert gate.status_signal(statuses, "Review labels") is WAITING
+    assert gate.status_signal(statuses, "Merge gate") is WAITING
+    assert gate.status_signal([_status("Alpha review", "error")], "Alpha review") is FAILED
+    assert gate.status_signal([_status("Alpha review", "odd")], "Alpha review") is FAILED
+    assert gate.status_signal(
+        [{"context": "Alpha review", "state": "success"}], "Alpha review"
+    ) is (WAITING)
+
+
+CHECK = GateCheck("Outside Review", 4242)
+
+
+def _check(
+    conclusion: str | None, status: str = "completed", app: int = 4242, n: int = 1
+) -> dict[str, Any]:
+    """Return one check run named Outside Review; a higher ``n`` is newer."""
+    run = {"name": "Outside Review", "status": status, "conclusion": conclusion, "id": n}
+    return {**run, "app": {"id": app}}
+
+
+@pytest.mark.parametrize(
+    ("runs", "trusted", "expected"),
+    [
+        ([_check("success")], True, PASSED),
+        ([_check("success")], False, PASSED),
+        ([_check("neutral")], True, PASSED),
+        ([_check("skipped")], True, PASSED),
+        ([_check("neutral")], False, WAITING),
+        ([_check("skipped")], False, WAITING),
+        ([_check("failure")], True, FAILED),
+        ([_check("cancelled")], True, FAILED),
+        ([_check("timed_out")], False, FAILED),
+        ([_check(None, status="in_progress")], True, WAITING),
+        ([], True, WAITING),
+        ([_check("success", app=7)], True, WAITING),
+        ([{**_check("success"), "name": "Something else"}], True, WAITING),
+        ([{**_check("success"), "app": None}], True, WAITING),
+        ([_check("failure", n=1), _check("success", n=2)], True, PASSED),
+        ([_check("success", n=1), _check("failure", n=2)], True, FAILED),
+    ],
+)
+def test_a_check_counts_only_under_its_name_from_its_own_app(
+    runs: list[Any], trusted: bool, expected: gate.Signal
+) -> None:
+    """Its own app, the newest run; for an outside author only a real review passes."""
+    assert gate.check_signal(runs, CHECK, trusted=trusted) is expected
+
+
+@pytest.mark.parametrize(
+    ("association", "login", "kind", "head_repo", "trusted"),
+    [
+        ("OWNER", "maintainer", "User", "o/r", True),
+        ("MEMBER", "someone", "User", "o/r", True),
+        ("COLLABORATOR", "someone", "User", "fork/r", True),
+        ("NONE", "dependabot[bot]", "Bot", "o/r", True),
+        # A person cannot take a bot's name: the account must be a bot.
+        ("NONE", "dependabot[bot]", "User", "fork/r", False),
+        # The repository's own workflows open pull requests from a branch of it.
+        ("NONE", "github-actions[bot]", "Bot", "o/r", True),
+        ("NONE", "github-actions[bot]", "Bot", "fork/r", False),
+        ("NONE", "github-actions[bot]", "User", "o/r", False),
+        ("NONE", "some-other[bot]", "Bot", "o/r", False),
+        ("CONTRIBUTOR", "someone", "User", "fork/r", False),
+        ("FIRST_TIME_CONTRIBUTOR", "someone", "User", "fork/r", False),
+        ("NONE", "someone", "User", "o/r", False),
+        ("", "", "", "", False),
+    ],
+)
+def test_who_is_trusted_comes_from_githubs_own_word_on_the_author(
+    association: str, login: str, kind: str, head_repo: str, trusted: bool
+) -> None:
+    """The association GitHub reports; a bot by its account and kind, not by a name."""
+    pull = {
+        "author_association": association,
+        "user": {"login": login, "type": kind},
+        "head": {"repo": {"full_name": head_repo}},
+    }
+    assert gate.is_trusted(pull, "o/r", GATE.trusted_bots) is trusted
+
+
+def test_a_bot_is_trusted_only_when_the_project_lists_it() -> None:
+    """``gate.trusted_bots`` is the whole list: with none listed, not even Dependabot is."""
+    pull = {"author_association": "NONE", "user": {"login": "helper[bot]", "type": "Bot"}}
+    assert gate.is_trusted(pull, "o/r", GATE.trusted_bots) is False
+    assert gate.is_trusted(pull, "o/r", ("helper[bot]",)) is True
+    dependabot = {**pull, "user": {"login": "dependabot[bot]", "type": "Bot"}}
+    assert gate.is_trusted(dependabot, "o/r", ()) is False
+    assert gate.is_trusted({}, "o/r", GATE.trusted_bots) is False
