@@ -1,4 +1,4 @@
-"""The gate against a fake GitHub: the guards, every failed read, and what is posted.
+"""``devloop gate`` against a fake GitHub: the guards, every failed read, and what is posted.
 
 Invariants (devloop.gate.reader). Nothing is posted for a pull request that is closed,
 goes into another branch, or is a fork's on a head a branch here also heads. Pending is
@@ -7,13 +7,16 @@ posted once, after those guards. Whatever cannot be read ends as a failure, neve
 
 from __future__ import annotations
 
+from pathlib import Path
 from typing import Any
 
 import pytest
 
-from devloop.config import Gate, parse_config
+from devloop.cli import main as cli
+from devloop.config import ConfigError, Gate, parse_config
 from devloop.gate import reader, rules
 from devloop.review import feedback as fb
+from devloop.review.github import Reply
 
 BOT = "github-actions[bot]"
 HEAD, BASE, MOVED = "a" * 40, "c" * 40, "b" * 40
@@ -544,3 +547,153 @@ def test_a_changed_file_whose_name_or_kind_is_not_text_is_could_not_check(
     assert hub.run() == 1
     assert hub.states == ["pending", "failure"]
     assert "a changed file's name or kind of change is not text" in capsys.readouterr().err
+
+
+# --- the API client and the command ----------------------------------------------------
+
+
+def test_the_client_posts_the_gates_own_status_and_refuses_an_error_answer() -> None:
+    """One context, a short description, the run's link; a refusal is an error after retries."""
+    sent: list[tuple[str, str, str, object]] = []
+    answers = [Reply(200, {"ok": True}), Reply(201, {})]
+
+    def send(method: str, url: str, token: str, body: object = None) -> Reply:
+        """Record one request and answer the next canned reply."""
+        sent.append((method, url, token, body))
+        return answers.pop(0)
+
+    waits: list[float] = []
+    api = reader.Api("t0ken", "o/r", "May merge", "https://run/1", send=send, sleep=waits.append)
+    assert api.get("repos/o/r/pulls/7") == {"ok": True}
+    api.post(HEAD, "success", "x" * 200)
+    assert sent[0] == ("GET", "https://api.github.com/repos/o/r/pulls/7", "t0ken", None)
+    assert sent[1][:3] == ("POST", f"https://api.github.com/repos/o/r/statuses/{HEAD}", "t0ken")
+    assert sent[1][3] == {
+        "state": "success",
+        "context": "May merge",
+        "description": "x" * 140,
+        "target_url": "https://run/1",
+    }
+    answers += [Reply(201, {})]
+    reader.Api("t0ken", "o/r", "May merge", send=send, sleep=waits.append).post(
+        HEAD, "pending", "x"
+    )
+    assert sent[2][3] == {"state": "pending", "context": "May merge", "description": "x"}
+    # A server error is retried twice, then it is an error; a refusal is one at once.
+    answers += [Reply(503, None)] * 3 + [Reply(403, None)]
+    for _ in range(2):
+        with pytest.raises(fb.FeedbackError) as caught:
+            api.get("repos/o/r/pulls/7?secret=1")
+        assert "t0ken" not in str(caught.value) and "secret=1" not in str(caught.value)
+    assert waits == [15.0, 30.0] and answers == []
+
+
+def _project(tmp_path: Path, text: str = CONFIG) -> list[str]:
+    """Write a devloop.toml and return the command line that runs the gate there."""
+    (tmp_path / "devloop.toml").write_text(text, encoding="utf-8")
+    return ["gate", "--root", str(tmp_path), "--repo", "o/r", "--pr", "7", "--run-url", "u"]
+
+
+def test_the_command_judges_with_the_rules_of_the_folder_it_runs_in(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The token, the repository, the number and the default branch's [gate] reach the gate."""
+    seen: list[object] = []
+
+    def evaluate(*args: object, outputs: str) -> int:
+        """Record what the gate was called with."""
+        seen.extend([*args, outputs])
+        return 0
+
+    monkeypatch.setattr(reader, "evaluate", evaluate)
+    monkeypatch.setenv("GITHUB_TOKEN", "t0ken")
+    monkeypatch.setenv("GITHUB_OUTPUT", str(tmp_path / "out"))
+    text = CONFIG + 'context = "May merge"\ncontrol = ["tools/**"]\n'
+    assert cli(_project(tmp_path, text)) == 0
+    expected = rules.rules(parse_config(text))
+    api, out = reader.Api("t0ken", "o/r", "May merge", "u"), str(tmp_path / "out")
+    assert seen == [api, "o/r", 7, expected, out]
+    assert "tools/**" in expected.control
+    # The workflow reads the status's name to report a run that broke.
+    assert (tmp_path / "out").read_text() == "context=May merge\n"
+
+
+def test_a_pull_request_that_cannot_be_read_is_a_failed_run_with_no_status(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """The first read failing leaves exit code 1 and the reason, never a pass."""
+    hub = Hub([_file()])
+    hub.fail = "/pulls/7"
+    monkeypatch.setenv("GITHUB_TOKEN", "t0ken")
+    monkeypatch.setattr(reader, "Api", lambda *args: hub)
+    assert cli(_project(tmp_path)) == 1
+    assert hub.posted == []
+    err = capsys.readouterr()
+    assert "devloop gate: could not check: cannot read repos/o/r/pulls/7" in err.err
+    assert "t0ken" not in err.out + err.err
+
+
+def test_the_command_cannot_start_without_a_token_a_repository_or_valid_rules(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """Exit code 2, and nothing is read from GitHub."""
+    monkeypatch.setattr(reader, "evaluate", lambda *args: pytest.fail("the gate ran"))
+    monkeypatch.delenv("GITHUB_TOKEN", raising=False)
+    args = _project(tmp_path)
+    assert cli(args) == 2
+    assert "GITHUB_TOKEN" in capsys.readouterr().err
+    monkeypatch.setenv("GITHUB_TOKEN", "t0ken")
+    assert cli([*args[:4], "not a repository", *args[5:]]) == 2
+    assert cli([*args[:6], "0"]) == 2
+    assert cli(_project(tmp_path, CONFIG + "bogus = 1\n")) == 2
+    assert "unknown key gate.bogus" in capsys.readouterr().err
+    (tmp_path / "devloop.toml").unlink()
+    assert cli(args) == 2
+
+
+@pytest.mark.parametrize("context", ["Merge\\ngate", "x" * 101])
+def test_the_status_name_is_one_short_line(context: str) -> None:
+    """It is written to the workflow's outputs and into a log command."""
+    with pytest.raises(ConfigError, match=r"gate\.context must be one line"):
+        parse_config(f'[framework]\nversion = "0.1"\n[gate]\ncontext = "{context}"\n')
+
+
+def test_the_head_judged_is_written_to_the_outputs_before_a_later_read_can_fail(
+    tmp_path: Path,
+) -> None:
+    """The workflow reports a run that broke on the head this run judged, not an older one."""
+    out = tmp_path / "out"
+    for broken in ("/branches-where-head", "/compare/", "/statuses"):
+        out.write_text("", encoding="utf-8")
+        hub = Hub([CORE], fork=True, **OUTSIDER)
+        hub.fail = broken
+        assert reader.evaluate(hub, "o/r", 7, GATE, outputs=str(out)) == 1
+        assert out.read_text(encoding="utf-8") == f"sha={HEAD}\n"
+    # A head that is not a commit id is never written: it would be read as more outputs.
+    odd = Hub([_file()], head={"sha": HEAD + "\nposted=true", "repo": {"full_name": "o/r"}})
+    out.write_text("", encoding="utf-8")
+    with pytest.raises(fb.FeedbackError, match="names no head commit"):
+        reader.evaluate(odd, "o/r", 7, GATE, outputs=str(out))
+    assert out.read_text(encoding="utf-8") == "" and odd.posted == []
+
+
+def test_settings_or_outputs_that_cannot_be_read_or_written_are_start_up_errors(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """One line and exit code 2, as for an invalid devloop.toml: never a traceback."""
+    monkeypatch.setattr(reader, "evaluate", lambda *args, **more: pytest.fail("the gate ran"))
+    monkeypatch.setenv("GITHUB_TOKEN", "t0ken")
+    args = _project(tmp_path)
+    # GITHUB_OUTPUT in a folder that does not exist.
+    monkeypatch.setenv("GITHUB_OUTPUT", str(tmp_path / "none" / "out"))
+    assert cli(args) == 2
+    assert capsys.readouterr().err == "devloop gate: GITHUB_OUTPUT could not be written\n"
+    monkeypatch.delenv("GITHUB_OUTPUT")
+    # A devloop.toml that is not UTF-8, then one that is a folder.
+    (tmp_path / "devloop.toml").write_bytes(b'[framework]\nversion = "\xff\xfe"\n')
+    assert cli(args) == 2
+    assert capsys.readouterr().err == "devloop gate: devloop.toml could not be read\n"
+    (tmp_path / "devloop.toml").unlink()
+    (tmp_path / "devloop.toml").mkdir()
+    assert cli(args) == 2
+    assert capsys.readouterr().err == "devloop gate: devloop.toml could not be read\n"

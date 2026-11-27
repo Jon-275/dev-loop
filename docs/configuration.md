@@ -129,7 +129,7 @@ The gate reads this table from the default branch, never from the pull request.
 
 | Key | Default | Meaning |
 |---|---|---|
-| `context` | `"Merge gate"` | The name of the commit status the gate posts. |
+| `context` | `"Merge gate"` | The name of the commit status the gate posts: one line of at most 100 characters. |
 | `light` | Markdown and images under `docs/`, a `.md` file directly under `changelog.dir`, and `README.md`, `CONTRIBUTING.md`, `SUPPORT.md` and `CODE_OF_CONDUCT.md` at the root | Globs of documents. A pull request that changes only these is in the light lane and waits for no reviewer. A path must match in exactly this spelling. |
 | `control` | `[]` | Globs of extra control files, compared without regard to case. They add to the built-in ones (hidden files and folders, `devloop.toml`, `devloop/`, agent instructions, build and tool settings, and the folders and files the other sections name); none can be removed. |
 | `statuses` | `labels.wait_for` and `"Review labels"` | Commit statuses that must have passed on the head in the strict lane. Only a status the workflow account (`github-actions[bot]`) posted counts. |

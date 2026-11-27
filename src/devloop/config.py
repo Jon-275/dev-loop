@@ -717,6 +717,8 @@ def _gate(
     """
     d = Gate()
     context = _str(table, "gate.context", "context", d.context)
+    if not context.isprintable() or len(context) > 100:
+        raise ConfigError("gate.context must be one line of at most 100 characters")
     derived = tuple(dict.fromkeys((*wait_for, *d.statuses)))
     statuses = _strs(table, "gate.statuses", "statuses", derived)
     checks = _gate_checks(table.get("checks", []))

@@ -46,6 +46,7 @@ def _parser() -> argparse.ArgumentParser:
         ("review", "review a pull request with a model and post each finding as a thread"),
         ("feedback", "collect accepted and rejected review findings into review.feedback"),
         ("labels", "in CI, check every review finding on a pull request has a labelled reply"),
+        ("gate", "in CI, post the one merge status of a pull request: its lane and its reviews"),
         ("lessons", "rank the bug classes review found and write the lessons and rules"),
         ("metrics", "measure the review loop over the pull requests merged in a window"),
         ("agent", "add an opted-in commit trailer or install its commit-msg hook"),
@@ -68,6 +69,10 @@ def _parser() -> argparse.ArgumentParser:
         if name == "metrics":
             sub.add_argument("--days", type=int, default=7, help="the window, in days")
             sub.add_argument("--json", type=Path, default=None, help="also write the figures")
+        if name == "gate":
+            sub.add_argument("--pr", required=True, type=int, help="the pull request number")
+            sub.add_argument("--repo", required=True, help="owner/name")
+            sub.add_argument("--run-url", default="", help="the run's URL, linked from the status")
         if name == "main-health":
             sub.add_argument("--workflow", required=True, help="the workflow's name")
             sub.add_argument("--sha", required=True, help="the commit the run tested")
@@ -253,6 +258,10 @@ def main(argv: Sequence[str] | None = None) -> int:
         from devloop.review.labels import main as labels_main
 
         return labels_main(root, os.environ)
+    if args.command == "gate":
+        from devloop.gate.reader import main as gate_main
+
+        return gate_main(root, args.repo, args.pr, args.run_url, os.environ)
     if args.command == "lessons":
         from devloop.lessons import main as lessons_main
 
