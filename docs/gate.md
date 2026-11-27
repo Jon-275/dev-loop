@@ -168,3 +168,5 @@ If you set `gate.context`, require that name instead. One limit: when the run
 breaks before devloop has read its settings (devloop could not be installed, `devloop.toml`
 is not valid, or there is no token), the `failure` is reported as `Merge gate`. A status
 under the new name is left as it was.
+
+For workflow event verification, record each reported check name and its conclusion.
