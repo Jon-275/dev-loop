@@ -1,0 +1,1 @@
+- **A read-only reader of a repository's GitHub settings.** It reads the repository, the default branch's protection, the rulesets that cover it, the Actions permissions and private vulnerability reporting, with GET calls only and the retries every devloop call has. An answer GitHub refuses keeps its reason, so `devloop doctor --repo` can report that setting as not judged.
