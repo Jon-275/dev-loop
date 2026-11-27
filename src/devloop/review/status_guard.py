@@ -26,7 +26,7 @@ fork's head afterwards shares statuses already written (see docs/security.md).
 
 from __future__ import annotations
 
-from collections.abc import Mapping
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 
 from devloop.review import feedback as fb
@@ -48,6 +48,33 @@ def _full_name(side: object) -> str | None:
     return name if isinstance(name, str) and name else None
 
 
+def head_of(pull: object, number: int, branches: Callable[[str], object]) -> Head:
+    """Return the head of the pull request record ``pull`` and whether its status is due.
+
+    The rule of invariant 1 for a caller that has read the pull request itself and
+    judges that same record. ``branches`` reads the base repository's branches whose
+    head is a commit; it is called only for a fork's pull request.
+
+    Raises:
+        FeedbackError: the record names no head commit or no base repository, or
+            ``branches`` did not return a list: the status could not be checked.
+
+    """
+    head = pull.get("head") if isinstance(pull, Mapping) else None
+    sha = head.get("sha") if isinstance(head, Mapping) else None
+    base = _full_name(pull.get("base")) if isinstance(pull, Mapping) else None
+    if not isinstance(sha, str) or not sha or base is None:
+        raise fb.FeedbackError(
+            f"GitHub's reply for pull request {number} has no head commit or base repository"
+        )
+    if _full_name(head) == base:
+        return Head(sha, due=True)
+    shared = branches(sha)
+    if not isinstance(shared, list):
+        raise fb.FeedbackError(f"GitHub's list of the branches headed by {sha} is not a list")
+    return Head(sha, due=not shared)
+
+
 def read_head(repo: str, number: int, token: str, *, send: Http = http, sleep: fb.Sleep) -> Head:
     """Return pull request ``number``'s head and whether its status is due (invariant 1).
 
@@ -59,22 +86,14 @@ def read_head(repo: str, number: int, token: str, *, send: Http = http, sleep: f
             no base repository: the status could not be checked (invariant 3).
 
     """
+
+    def branches(sha: str) -> object:
+        """Return the base repository's branches whose head is ``sha``."""
+        url = f"{GITHUB_API}/repos/{repo}/commits/{sha}/branches-where-head"
+        return fb.request("GET", url, token, send=send, sleep=sleep).data
+
     url = f"{GITHUB_API}/repos/{repo}/pulls/{number}"
-    pull = fb.request("GET", url, token, send=send, sleep=sleep).data
-    head = pull.get("head") if isinstance(pull, Mapping) else None
-    sha = head.get("sha") if isinstance(head, Mapping) else None
-    base = _full_name(pull.get("base")) if isinstance(pull, Mapping) else None
-    if not isinstance(sha, str) or not sha or base is None:
-        raise fb.FeedbackError(
-            f"GitHub's reply for pull request {number} has no head commit or base repository"
-        )
-    if _full_name(head) == base:
-        return Head(sha, due=True)
-    url = f"{GITHUB_API}/repos/{repo}/commits/{sha}/branches-where-head"
-    branches = fb.request("GET", url, token, send=send, sleep=sleep).data
-    if not isinstance(branches, list):
-        raise fb.FeedbackError(f"GitHub's list of the branches headed by {sha} is not a list")
-    return Head(sha, due=not branches)
+    return head_of(fb.request("GET", url, token, send=send, sleep=sleep).data, number, branches)
 
 
 def notice(context: str, number: int, sha: str) -> str:
