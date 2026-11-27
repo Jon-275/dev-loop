@@ -1,0 +1,13 @@
+# The files that decide what runs with a key or writes a status, and what every
+# project's agents are told. A person must look at changes to them.
+#
+# This is advice to reviewers, not a gate: with one maintainer, code-owner review is
+# not required on main, since an author cannot approve their own pull request.
+
+/.github/ @Jon-275
+/src/devloop/review/ @Jon-275
+/src/devloop/templates/ @Jon-275
+/src/devloop/skills/ @Jon-275
+/devloop.toml @Jon-275
+/AGENTS.md @Jon-275
+/SECURITY.md @Jon-275
