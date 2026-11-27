@@ -9,6 +9,7 @@
 #     unapprove:
 #       uses: Jon-275/dev-loop/.github/workflows/unapprove.yml@<tag>
 #       permissions:
+#         contents: read
 #         pull-requests: write
 #
 # It holds no key, checks out nothing and installs nothing. The reviews do not wait
