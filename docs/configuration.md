@@ -135,7 +135,7 @@ The gate reads this table from the default branch, never from the pull request.
 | `statuses` | `labels.wait_for` and `"Review labels"` | Commit statuses that must have passed on the head in the strict lane. Only a status the workflow account (`github-actions[bot]`) posted counts. |
 | `checks` | `[]` | Check runs that must have passed in the strict lane, each `{ name, app }`: `app` is the id of the GitHub App that makes the check, and a check from another app does not count. |
 | `light_blocks` | `["Review labels"]` | Statuses that fail the light lane when they failed. The light lane does not wait for them. |
-| `trusted_bots` | `["dependabot[bot]"]` | Bot accounts whose pull requests are judged as a member's are. |
+| `trusted_bots` | `["dependabot[bot]"]` | Bot accounts whose pull requests are judged as a member's are, when they come from a branch of the repository itself. |
 | `max_light_files` | `100` | The most files a light pull request may change; more is strict. |
 
 `statuses` and `checks` cannot both be empty, a name can appear once across the two, and
