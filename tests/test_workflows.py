@@ -58,7 +58,10 @@ def test_the_default_token_is_read_only_and_every_job_has_a_time_limit(path: Pat
         assert "uses" in job or "timeout-minutes" in job, name
 
 
-@pytest.mark.parametrize("name", ["pr-hygiene.yml", "main-health.yml", "drift-check.yml"])
+@pytest.mark.parametrize(
+    "name",
+    ["pr-hygiene.yml", "pr-validation.yml", "pr-size.yml", "main-health.yml", "drift-check.yml"],
+)
 def test_the_shared_workflows_are_called_with_a_devloop_to_install(name: str) -> None:
     devloop = _on(_load(name))["workflow_call"]["inputs"]["devloop"]
     assert devloop["required"] is True and devloop["type"] == "string"
@@ -118,6 +121,46 @@ def test_the_docs_only_answer_is_a_workflow_output() -> None:
     assert outputs["doc_tests"]["value"] == "${{ jobs.changes.outputs.doc_tests }}"
 
 
+def test_size_has_one_publisher_and_only_it_runs_on_label_events() -> None:
+    """Labels remeasure size without publishing a replacement code or validation result."""
+    code = _load("ci.yml")
+    size = _load("repository-pr-size.yml")
+    code_events = _on(code)["pull_request"]["types"]
+    assert set(code_events) == {"opened", "reopened", "synchronize"}
+    assert _on(size) == {"pull_request": {"types": [*code_events, "labeled", "unlabeled"]}}
+    assert code["concurrency"]["group"] != size["concurrency"]["group"]
+    assert "if" not in code["jobs"]["check"]
+    assert size["jobs"] == {
+        "hygiene": {
+            "uses": "./.github/workflows/pr-size.yml",
+            "permissions": {"contents": "read", "pull-requests": "read"},
+            "with": {"devloop": "."},
+        },
+    }
+    jobs = _load("pr-validation.yml")["jobs"]
+    assert set(jobs) == {"changes", "doctor", "changelog"}
+    assert "if" not in jobs["doctor"]
+    assert jobs["changelog"]["if"] == "${{ github.event_name == 'pull_request' }}"
+
+
+def test_split_preserves_validation_and_size_commands_and_context_names() -> None:
+    """Existing required jobs keep their displayed names and run the same commands."""
+    legacy = _load("pr-hygiene.yml")
+    validation = _load("pr-validation.yml")
+    assert _on(validation)["workflow_call"]["outputs"] == _on(legacy)["workflow_call"]["outputs"]
+    for name, job in validation["jobs"].items():
+        old = legacy["jobs"][name]
+        assert job["name"] == old["name"]
+        assert job["steps"] == old["steps"]
+    size_jobs = _load("pr-size.yml")["jobs"]
+    assert set(size_jobs) == {"size"}
+    job = size_jobs["size"]
+    assert "if" not in job
+    assert job["name"] == "PR size"
+    assert job["steps"] == legacy["jobs"]["size"]["steps"]
+    assert job["permissions"] == legacy["jobs"]["size"]["permissions"]
+
+
 def test_main_health_may_write_issues_and_nothing_else() -> None:
     job = _load("main-health.yml")["jobs"]["report"]
     assert job["permissions"] == {"contents": "read", "issues": "write"}
@@ -136,7 +179,7 @@ def test_ci_reports_main_after_every_other_job_whatever_they_did() -> None:
 
 def test_ci_uses_its_own_shared_workflows_from_this_checkout() -> None:
     jobs = _load("ci.yml")["jobs"]
-    assert jobs["hygiene"]["uses"] == "./.github/workflows/pr-hygiene.yml"
+    assert jobs["hygiene"]["uses"] == "./.github/workflows/pr-validation.yml"
     assert jobs["hygiene"]["with"] == {"devloop": "."}
     assert jobs["main-health"]["uses"] == "./.github/workflows/main-health.yml"
 
@@ -144,9 +187,7 @@ def test_ci_uses_its_own_shared_workflows_from_this_checkout() -> None:
 def test_main_pushes_never_cancel_each_other() -> None:
     concurrency = _load("ci.yml")["concurrency"]
     assert "github.event_name == 'push' && github.sha" in concurrency["group"]
-    # One group per PR for code runs and one for label changes, which never cancel each other.
-    assert "github.event.action }}" not in concurrency["group"]
-    assert "'labeled' || github.event.action == 'unlabeled') && '-label'" in concurrency["group"]
+    assert "github.event.action" not in concurrency["group"]
     assert concurrency["cancel-in-progress"] == "${{ github.event_name == 'pull_request' }}"
 
 
