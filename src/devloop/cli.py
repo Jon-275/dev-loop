@@ -1,7 +1,8 @@
 """The ``devloop`` command line.
 
 Exit codes: 0 success (or a report without ``--check``), 1 a check failed, 2 the
-command could not run (bad configuration or sources).
+command could not run (bad configuration or sources), 3 nothing failed but something
+could not be judged (``doctor --repo``).
 """
 
 from __future__ import annotations
@@ -57,6 +58,12 @@ def _parser() -> argparse.ArgumentParser:
         sub.add_argument("--root", type=Path, default=Path.cwd(), help="project root")
         if name == "doctor":
             sub.add_argument("--check", action="store_true", help="exit 1 on any problem")
+            sub.add_argument(
+                "--repo",
+                metavar="OWNER/NAME",
+                help="instead, compare the repository's GitHub settings with [github] (read-only)",
+            )
+            sub.add_argument("--json", action="store_true", help="with --repo, print records")
         if name in ("size", "changes"):
             event = os.environ.get("GITHUB_EVENT_NAME", "")
             sub.add_argument("--event", default=event, help="github.event_name")
@@ -270,6 +277,13 @@ def main(argv: Sequence[str] | None = None) -> int:
         from devloop.metrics import main as metrics_main
 
         return metrics_main(root, args.days, args.json, os.environ)
+    if args.command == "doctor" and (args.repo is not None or args.json):
+        if args.repo is None:
+            print("devloop doctor: --json needs --repo", file=sys.stderr)
+            return 2
+        from devloop.repo_settings import main as settings_main
+
+        return settings_main(root, args.repo, args.json, os.environ)
     try:
         if args.command == "init":
             _report(init(root))

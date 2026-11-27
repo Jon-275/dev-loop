@@ -27,6 +27,10 @@ devloop doctor --check    # check nothing has drifted; run this in CI
 - `devloop init`: create `devloop.toml` and set up the project.
 - `devloop sync`: update every copy from its source. Edit the source, never a copy.
 - `devloop doctor [--check]`: list any problems. `--check` exits 1 if there are any.
+- `devloop doctor --repo OWNER/NAME [--json]`: compare the repository's live GitHub
+  settings with `[github]` in `devloop.toml`, read-only. Each setting is ok, differs or
+  not judged; the exit code is 1, or 3 when something could not be judged
+  ([GitHub settings](docs/github-settings.md)).
 - `devloop size`: in CI, count a pull request's changed lines and fail one over
   `pr.max_lines`, unless it has the `pr.large_label` label. Skill copies and the paths
   in `pr.exclude` are not counted. `devloop size --base origin/main` measures the

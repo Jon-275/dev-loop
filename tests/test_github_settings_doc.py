@@ -1,9 +1,12 @@
 """Tests that the GitHub settings page is published and the pages that give its advice link it."""
 
+import dataclasses
 import re
 from pathlib import Path
 
 import yaml
+
+from devloop.config import GitHub
 
 ROOT = Path(__file__).resolve().parents[1]
 PAGE = "github-settings.md"
@@ -42,3 +45,10 @@ def test_the_page_says_what_it_leaves_out_and_why() -> None:
         "Signed commits",
         "Linear history",
     ]
+
+
+def test_the_page_names_every_key_the_command_judges() -> None:
+    section = _page(PAGE).split("## Check the settings")[1].split("### Check by hand")[0]
+    judged = section.split("These keys are judged:")[1].split(".")[0]
+    assert re.findall(r"`([a-z_]+)`", judged) == [f.name for f in dataclasses.fields(GitHub)]
+    assert "devloop doctor --repo OWNER/NAME" in section

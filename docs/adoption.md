@@ -59,6 +59,8 @@ Or require the one `Merge gate` status in place of the reviewers' statuses and
 A required status is what turns a rule into a gate. The other settings (administrators,
 force pushes, the workflow token, secret scanning, the merge method and the rest) are one
 table, each with its reason: [GitHub settings](github-settings.md).
+`devloop doctor --repo OWNER/NAME` compares the live settings with that table
+([check the settings](github-settings.md#check-the-settings)).
 
 Use a separate caller like the [repository drift workflow](https://github.com/Jon-275/dev-loop/blob/main/.github/workflows/repository-drift.yml).
 Replace its local workflow call and `devloop: '.'` with the same pinned commit for the

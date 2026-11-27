@@ -34,6 +34,59 @@ different values.
 | Delete the branch on merge | On | Merged branches do not pile up, and nobody pushes to one by mistake. In a stack, move the next pull request's base to the default branch before you merge. | Settings → General → "Automatically delete head branches" (`GET R`: `delete_branch_on_merge`) |
 | Reviewer API keys | One key per reviewer, used by nothing else, with a spend cap at the provider. | The cap is the limit on what a mistake or a leaked key can cost ([cost model](cost.md)). | The provider's console. GitHub does not show it. |
 
+## Check the settings
+
+`devloop doctor --repo OWNER/NAME` reads the live settings and compares them with the
+`[github]` table of `devloop.toml` ([configuration](configuration.md#github)). The
+defaults of that table are the baseline above, so a project lists only what it does
+differently on purpose. The command only reads: every call is a GET.
+
+```bash
+GITHUB_TOKEN=... devloop doctor --repo OWNER/NAME          # one line per setting
+GITHUB_TOKEN=... devloop doctor --repo OWNER/NAME --json   # the same, as records
+```
+
+Each line is one of:
+
+- `ok`: the setting has the expected value.
+- `differs`: it says what was expected and what was found.
+- `not judged`: the setting could not be read, with the reason. A token without admin
+  rights gets a 403 for branch protection and the Actions settings, and GitHub leaves
+  the security and merge fields out of its answer. Some settings do not exist for every
+  kind of repository.
+- `skipped`: the key is set to `"skip"`.
+
+The exit code is 1 when a setting differs, 3 when none differs but one was not judged,
+and 0 only when every setting was judged ok. "Not judged" is never "healthy". Exit code 2
+means the command could not start: no token, or a `devloop.toml` that is not valid.
+
+A branch rule counts when classic branch protection or an active ruleset on the default
+branch makes it. To say a rule is not there, both must be read. When the two disagree on
+code-owner review, the report says so on a line of its own, `code_owner_review_sources`.
+
+These keys are judged: `required_checks`, `required_checks_bound`, `enforce_admins`,
+`allow_force_pushes`, `allow_deletions`, `conversation_resolution`, `code_owner_review`,
+`default_token_read_only`, `sha_pinning_required`, `fork_pr_approval`, `secret_scanning`,
+`push_protection`, `private_vulnerability_reporting`, `delete_branch_on_merge` and
+`merge_methods`. `required_checks` has no default: until the project lists its checks,
+that line is `not judged` and shows the checks found.
+
+### Check by hand
+
+The command leaves these out, because the API does not show them reliably:
+
+- **Every required check arrives on every pull request.** GitHub does not say which
+  events a check runs on. Read the workflows ([adoption](adoption.md#4-branch-protection)).
+- **The merge gate is the one review status.** That is the project's choice of names in
+  `required_checks`.
+- **Every action is pinned to a commit.** The command checks the repository setting, not
+  the workflow files.
+- **Fork pull requests cannot reach secrets.** It is in the caller workflow, not a setting.
+- **Dependabot alerts.** The API answers 404 both when alerts are off and when the token
+  may not see them.
+- **`CODEOWNERS` and `SECURITY.md`.** They are files: read them.
+- **The spend cap on each reviewer key.** It is at the provider.
+
 ## Left out on purpose
 
 These are common advice. A project with one maintainer gains little from them, so the
