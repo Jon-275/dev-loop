@@ -8,6 +8,17 @@ from pathlib import Path
 
 from devloop.review.model import Provider
 
+
+def pull(sha: str, head_repo: str | None = "o/r", base_repo: str = "o/r") -> dict[str, object]:
+    """Return GitHub's reply for a pull request: its head commit and both repositories.
+
+    ``head_repo`` is the base repository by default, another name for a fork, and None
+    for a fork that was deleted.
+    """
+    repo = {"full_name": head_repo} if head_repo is not None else None
+    return {"head": {"sha": sha, "repo": repo}, "base": {"repo": {"full_name": base_repo}}}
+
+
 #: A sample diff: one edited file whose added lines start with ``--`` and ``++``, one deleted.
 DIFF = """diff --git a/app.py b/app.py
 index 1..2 100644

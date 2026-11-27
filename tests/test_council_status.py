@@ -14,6 +14,7 @@ from pathlib import Path
 from typing import Any
 
 import pytest
+from review_helpers import pull
 
 from devloop.config import Config
 from devloop.council import parse_card
@@ -56,6 +57,11 @@ class Fake:
         self.files, self.current, self.fail, self.pages = files, current, fail, pages
         self.said, self.renamed = said, renamed or {}
         self.posted: list[dict[str, Any]] = []
+        #: What each read of the pull request answers, in turn (the last one repeats),
+        #: the branches of this repository headed by its commit, and every GET made.
+        self.pulls: list[dict[str, object]] = [pull(HEAD)]
+        self.shared: list[dict[str, str]] = []
+        self.gets: list[str] = []
 
     def __call__(self, method: str, url: str, token: str, body: object) -> Reply:
         """Answer one request."""
@@ -65,8 +71,11 @@ class Fake:
             assert isinstance(body, dict) and url.endswith(f"/statuses/{HEAD}")
             self.posted.append(body)
             return Reply(201, {})
+        self.gets.append(url)
         if url.endswith("/pulls/7"):
-            return Reply(200, {"head": {"sha": HEAD}})
+            return Reply(200, self.pulls.pop(0) if len(self.pulls) > 1 else self.pulls[0])
+        if url.endswith(f"/commits/{HEAD}/branches-where-head"):
+            return Reply(200, self.shared)
         if "/pulls/7/files" in url:
             asked = re.search(r"[?&]page=(\d+)", url)
             page = int(asked.group(1)) if asked else 1
@@ -88,10 +97,11 @@ class Fake:
 
 
 def _publish(fake: Fake, text: str | None, config: Config = TIERED) -> str:
-    """Publish for #7 against ``fake`` and return the state it decided."""
+    """Publish for #7 against ``fake`` and return the state it decided ("" when not due)."""
     api = Api("t", "o/r", send=fake, sleep=lambda _: None)
     report = parse_report(text) if text is not None else None
-    return publish(api, 7, CARDS, config, report, "run").state
+    verdict = publish(api, 7, CARDS, config, report, "run")
+    return verdict.state if verdict is not None else ""
 
 
 def test_a_safe_report_on_the_head_is_posted_as_success() -> None:
@@ -217,3 +227,83 @@ def test_renames_count_once_against_github_s_file_limit(
     full = {f"docs/{n}.md": f"src/{n}.py" for n in range(4)}
     with pytest.raises(fb.FeedbackError, match="lists 4 files"):
         _publish(Fake(list(full), renamed=full), None)
+
+
+FORK = "stranger/r"
+
+
+def _fork(head_repo: str | None = FORK, shared: int = 0) -> Fake:
+    """Return the fake for a fork's pull request whose head ``shared`` branches here head."""
+    fake = Fake(["docs/a.md"])
+    fake.pulls = [pull(HEAD, head_repo)]
+    fake.shared = [{"name": f"branch-{n}"} for n in range(shared)]
+    return fake
+
+
+@pytest.mark.parametrize("head_repo", [FORK, None], ids=["fork", "deleted-fork"])
+@pytest.mark.parametrize("text", [None, _report()], ids=["ci", "report"])
+def test_a_fork_whose_head_is_a_branch_head_here_gets_no_council_status(
+    capsys: pytest.CaptureFixture[str], head_repo: str | None, text: str | None
+) -> None:
+    """Neither CI's "not required" pass nor a report's verdict lands on the shared commit."""
+    fake = _fork(head_repo, shared=1)
+    assert _publish(fake, text) == "" and fake.posted == []
+    assert "::notice title=Council review::No status written" in capsys.readouterr().out
+    # Nothing more is read once the status is known not to be due.
+    assert [u.rsplit("/", 1)[1] for u in fake.gets] == ["7", "branches-where-head"]
+
+
+def test_a_status_that_is_not_due_is_a_run_that_succeeded(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """``devloop council report --post`` exits 0: nothing was posted and nothing is wrong."""
+    from devloop import council_status
+    from devloop.council import main
+
+    root = tmp_path / "repo"
+    (root / "devloop" / "council").mkdir(parents=True)
+    (root / "devloop.toml").write_text('[framework]\nversion = "0.6"\n', encoding="utf-8")
+    (root / "devloop" / "council" / "architect.md").write_text(CARD, encoding="utf-8")
+    fake = _fork(shared=2)
+    monkeypatch.setenv("GITHUB_TOKEN", "t")
+    monkeypatch.setattr(
+        council_status, "Api", lambda token, repo: Api(token, repo, fake, lambda _: None)
+    )
+    assert main(["report", "--root", str(root), "--post", "--pr", "7", "--repo", "o/r"]) == 0
+    assert fake.posted == []
+
+
+def test_a_fork_whose_head_no_branch_here_shares_gets_its_council_status() -> None:
+    """Statuses as before for an ordinary fork, after one read of the branches."""
+    fake = _fork()
+    assert _publish(fake, None) == "success"
+    assert [p["state"] for p in fake.posted] == ["success"]
+    assert sum("branches-where-head" in u for u in fake.gets) == 1
+
+
+def test_a_same_repository_pull_request_is_never_asked_about_branches() -> None:
+    """Same reads and the same one write as before the guard."""
+    fake = Fake(["docs/a.md"])
+    fake.shared = [{"name": "its-own-branch"}]
+    assert _publish(fake, None) == "success" and len(fake.posted) == 1
+    assert [u.removeprefix("https://api.github.com/repos/o/r/") for u in fake.gets] == [
+        "pulls/7",
+        "pulls/7/files?per_page=100",
+    ]
+
+
+def test_a_council_guard_that_could_not_check_posts_nothing() -> None:
+    """A failed read of the branches is not judged: the run fails and no status is written."""
+    fake = _fork(shared=1)
+    fake.fail = "branches-where-head"
+    with pytest.raises(fb.FeedbackError):
+        _publish(fake, None)
+    assert fake.posted == []
+
+
+def test_the_council_posts_on_the_commit_it_judged_when_the_head_moves() -> None:
+    """The head is read once, so the guard's commit is the one the status is written on."""
+    fake = _fork()
+    fake.pulls = [pull(HEAD, FORK), pull("b" * 40, FORK)]
+    assert _publish(fake, None) == "success" and len(fake.posted) == 1  # the fake takes HEAD only
+    assert sum(u.endswith("/pulls/7") for u in fake.gets) == 1

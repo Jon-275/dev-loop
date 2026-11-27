@@ -19,11 +19,17 @@
 # The verdict is the commit status. This job succeeds whenever it posted one, pass or
 # fail, and is red only when it could not check, so a red job always needs a look.
 #
-# The head is marked pending before anything can fail, and a run that fails before
+# devloop marks the head pending before it reads the threads, and a run that fails before
 # devloop posts its verdict posts a failure, so an earlier success never outlives a run
 # that could not check. devloop and devloop.toml come from the default branch's
 # checkout, never the pull request's; the job reads threads, statuses and check runs and
 # writes one commit status.
+#
+# A status belongs to a commit, not to a pull request. Only devloop writes pending or a
+# verdict, and only after its guard: a fork's pull request whose head is also the head of
+# a branch in this repository gets no status, so it cannot replace that branch's
+# (docs/security.md). No shell step here may post pending or success. The last step's
+# failure is the one unguarded post: it follows a run that broke and can never grant a pass.
 name: Review labels
 
 on:
@@ -70,7 +76,7 @@ jobs:
       HEAD_SHA: ${{ github.event.pull_request.head.sha }}
       RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
     steps:
-      - name: Mark the head pending before anything can fail
+      - name: Check the pull request number and find its head
         id: head
         run: |
           case "$PR_NUMBER" in
@@ -81,9 +87,6 @@ jobs:
             sha="$(gh api "repos/${GITHUB_REPOSITORY}/pulls/${PR_NUMBER}" --jq .head.sha)"
           fi
           echo "sha=${sha}" >> "$GITHUB_OUTPUT"
-          gh api "repos/${GITHUB_REPOSITORY}/statuses/${sha}" -f state=pending \
-            -f "context=Review labels" -f "description=Checking the review threads for labels" \
-            -f "target_url=${RUN_URL}"
 
       - name: Check out the default branch (the code and settings that run)
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
