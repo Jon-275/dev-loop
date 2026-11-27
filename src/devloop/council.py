@@ -301,6 +301,7 @@ SIGNALS: dict[str, tuple[tuple[str, ...], tuple[str, ...]]] = {
         ("*migrations/*.py", "*migrations/*.sql", "*alembic.ini"),
     ),
     "crm-revops": (("simple-salesforce", "hubspot-api-client"), ()),
+    "financial-modeling": (("openpyxl", "xlsxwriter", "xlwings"), ("*.xlsx", "*.xlsm")),
 }
 _NAME = re.compile(r"^\s*(@?[A-Za-z0-9][A-Za-z0-9._/-]*)")
 #: Where dependencies are declared: at the root or one folder down.

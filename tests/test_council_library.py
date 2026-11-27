@@ -5,7 +5,7 @@ from pathlib import Path
 import pytest
 
 from devloop.config import Config
-from devloop.council import ALWAYS, CouncilError, add, library, main, plan, problems
+from devloop.council import ALWAYS, CouncilError, add, library, main, plan, problems, warnings
 
 
 def test_every_library_card_is_valid_and_the_always_present_roles_exist() -> None:
@@ -49,3 +49,22 @@ def test_library_and_add_commands(tmp_path: Path, capsys: pytest.CaptureFixture[
     assert main(["add", "--root", str(tmp_path), "payments"]) == 0
     assert "created devloop/council/payments.md" in capsys.readouterr().out
     assert main(["add", "--root", str(tmp_path), "payments"]) == 2
+
+
+def test_financial_modeling_pack_and_signal(tmp_path: Path) -> None:
+    cards = library()
+    assert "financial-modeling" in cards
+    assert cards["financial-modeling"].reviewer == "domain"
+    assert cards["financial-modeling"].tiers == (1,)
+
+    (tmp_path / "devloop.toml").write_text('[framework]\nversion = "0.4"\n', encoding="utf-8")
+    (tmp_path / "pyproject.toml").write_text(
+        '[project]\nname = "m"\ndependencies = ["openpyxl>=3.1"]\n', encoding="utf-8"
+    )
+    (tmp_path / "workbook").mkdir()
+    (tmp_path / "workbook" / "model.xlsx").write_bytes(b"PK")
+    add(tmp_path, ["architect"])
+    found = warnings(tmp_path)
+    assert any("financial-modeling pack" in w for w in found)
+    add(tmp_path, ["financial-modeling"])
+    assert not any("financial-modeling pack" in w for w in warnings(tmp_path))
