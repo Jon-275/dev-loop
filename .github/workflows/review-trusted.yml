@@ -2,7 +2,7 @@
 # the base branch's copy of this file and of review.yml, and devloop is installed from
 # the base branch's checkout (devloop: "."), so a pull request never runs with the keys.
 #
-# This repository is public, so the reviews use `gate: members`: a pull request from
+# This repository is public, and the reviews keep the default gate (members): a pull request from
 # anyone but the owner, a member, a collaborator or Dependabot is sent to no reviewer
 # until a maintainer has looked at it and added the label ai-review-approved. The label
 # covers one head: a push removes it (the unapprove job), so new commits wait again.
@@ -16,31 +16,11 @@ permissions:
   contents: read
 
 jobs:
-  # A new head has not been looked at: the approval given to the last one goes. It
-  # holds no key and checks out nothing.
+  # A new head has not been looked at: the approval given to the last one goes.
   unapprove:
-    name: Withdraw approval on a new push
-    if: >-
-      github.event.action == 'synchronize'
-      && contains(github.event.pull_request.labels.*.name, 'ai-review-approved')
-    runs-on: ubuntu-24.04
-    timeout-minutes: 5
+    uses: ./.github/workflows/unapprove.yml
     permissions:
       pull-requests: write
-    steps:
-      - name: Remove the approval label
-        env:
-          GH_TOKEN: ${{ github.token }}
-          PR_NUMBER: ${{ github.event.pull_request.number }}
-        # Two quick pushes both see the label; the second finds it gone, which is the
-        # state wanted. Any other failure (permissions, an outage) fails the job.
-        run: |
-          if ! out="$(gh api -X DELETE "repos/${GITHUB_REPOSITORY}/issues/${PR_NUMBER}/labels/ai-review-approved" 2>&1)"; then
-            case "$out" in
-              *"HTTP 404"*) echo "The label was already removed." ;;
-              *) echo "$out" >&2; exit 1 ;;
-            esac
-          fi
 
   gemini:
     uses: ./.github/workflows/review.yml
@@ -51,7 +31,6 @@ jobs:
     with:
       provider: gemini
       devloop: "."
-      gate: members
     secrets:
       api_key: ${{ secrets.GEMINI_API_KEY }}
 
@@ -64,7 +43,6 @@ jobs:
     with:
       provider: reflection
       devloop: "."
-      gate: members
     secrets:
       api_key: ${{ secrets.REFLECTION_API_KEY }}
 

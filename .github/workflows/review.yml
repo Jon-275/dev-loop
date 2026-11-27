@@ -22,16 +22,18 @@
 # every pull request, so the status always reports; a pull request whose tier routes no
 # review to this reviewer, or that changes no reviewed file type, passes and says why.
 #
-# Outside pull requests (gate: members). A review spends the project's key and sends the
-# pull request's text to the reviewer, so a project can keep both for people it trusts:
-# with `gate: members` the review runs at once only when the author is the owner, a
-# member or a collaborator of the repository (or one of `trusted_bots`). Anyone else's
-# pull request waits, its status pending, until a maintainer adds the approval label;
-# that `labeled` event reviews the head it names, once. A later push is a new head and
-# waits again, so the caller also triggers on `labeled` and removes the label on every
-# push (docs/review.md, "Outside pull requests"). The decision reads only fields GitHub
-# sets (the author's association and login, the event's action and label), never
-# anything in the pull request, and it is made in a job that holds no key.
+# Outside pull requests (gate: members, the default). A review spends the project's key
+# and sends the pull request's text to the reviewer, so both are kept for people the
+# project trusts. The review runs at once only when the author is the owner, a member or
+# a collaborator of the repository, or one of `trusted_bots`. Anyone else's pull request
+# waits, its status pending, until a maintainer adds the approval label; that `labeled`
+# event reviews the head it names, once. A later push is a new head and waits again, so
+# the caller also triggers on `labeled` and calls unapprove.yml, which removes the label
+# on every push (docs/review.md, "Outside pull requests"). `gate: everyone` reviews
+# every pull request at once, for a private project whose authors are all trusted. The
+# decision reads only fields GitHub sets (the author's association and login, the
+# event's action and label), never anything in the pull request, and it is made in a
+# job that holds no key.
 #
 # A status belongs to a commit, not to a pull request. A fork's pull request whose head
 # is also the head of a branch in this repository gets no status and no review, so it
@@ -53,11 +55,11 @@ on:
         type: string
       gate:
         description: >-
-          Who is reviewed without approval: "" (everyone, the default) or "members"
-          (the owner, members, collaborators and trusted_bots; others wait for the label)
+          Who is reviewed without approval: "members" (the default: the owner, members,
+          collaborators and trusted_bots; others wait for the label) or "everyone"
         required: false
         type: string
-        default: ""
+        default: members
       approval_label:
         description: The label a maintainer adds to have an outside pull request reviewed
         required: false
@@ -103,7 +105,7 @@ jobs:
           AUTHOR: ${{ github.event.pull_request.user.login }}
           ACTION: ${{ github.event.action }}
           LABEL: ${{ github.event.label.name }}
-        # reason is one of: open (no gate), member, trusted-bot, approved (the approval
+        # reason is one of: open (gate: everyone), member, trusted-bot, approved (the approval
         # label was just added), waiting (an outside pull request with no approval for
         # this head), other-label (some other label was added: nothing to do).
         run: |
@@ -131,8 +133,8 @@ jobs:
                   ;;
               esac
             fi
-          elif [ -n "$GATE" ]; then
-            echo "review.yml: unknown gate '$GATE' (use \"\" or \"members\")" >&2
+          elif [ "$GATE" != "everyone" ]; then
+            echo "review.yml: unknown gate '$GATE' (use \"members\" or \"everyone\")" >&2
             exit 1
           fi
           echo "run=${run}" >> "$GITHUB_OUTPUT"
