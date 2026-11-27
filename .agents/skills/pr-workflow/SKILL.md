@@ -19,23 +19,30 @@ gets a change through them first time.
 3. **Tests first.** Write the test that fails without the change, watch it fail, then make
    it pass. A stateful change follows the `stateful-change` skill.
 4. **Run the gates** listed under "Commands" in `AGENTS.md` until all pass, and
-   `devloop doctor --check` when you touched skills, `AGENTS.md` or `devloop.toml`.
+   `devloop doctor --check` when you touched skills, `AGENTS.md` or `devloop.toml`. Run
+   each gate so you see its own exit code. Do not pipe it through a filter and trust the
+   last line: `pytest | tail -3` exits 0 when the tests fail.
 5. **Add a changelog fragment** under the changelog folder (`changes/` by default), named
    `<slug>.<section>.md`, and check it with `devloop changelog check`.
 6. **Check the size** with `devloop size --base origin/main`, which counts the committed
    branch with the same exclusions CI uses. Over `pr.max_lines`, stop and run
    `split-stack`.
-7. **Review locally** with the `review-locally` skill and fix what it finds.
-8. **Commit** with a conventional message (`feat:`, `fix:`, `docs:`, `chore:`), then run
+7. **Prove it** twice before opening:
+   - Revert the fix in a scratch copy, keep the new test, and watch the test fail. A
+     test that still passes proves nothing.
+   - Look at what a user would see, not only at the tests: render the page, run the
+     command, open the report.
+8. **Review locally** with the `review-locally` skill and fix what it finds.
+9. **Commit** with a conventional message (`feat:`, `fix:`, `docs:`, `chore:`), then run
    `devloop pr-open` before pushing: never push to a branch whose PR already merged or
    closed. `devloop pr-open --install` makes git run it on every push.
-9. **Open the PR** with `gh pr create --body-file <file>` (write multi-line bodies and
-   comments to a scratch file rather than a shell heredoc so backticks and quotes are
-   never expanded). Say what changed and why; for a stateful change, put the states,
-   identities and invariants in the description.
-10. **Review rounds** follow the `address-review` skill: wait for every reviewer, answer
+10. **Open the PR** with `gh pr create --body-file <file>` (write multi-line bodies and
+    comments to a scratch file rather than a shell heredoc so backticks and quotes are
+    never expanded). Say what changed and why; for a stateful change, put the states,
+    identities and invariants in the description.
+11. **Review rounds** follow the `address-review` skill: wait for every reviewer, answer
     every thread, push once.
-11. **Merge** only when the required checks pass and every thread is resolved with a
+12. **Merge** only when the required checks pass and every thread is resolved with a
     labelled reply. Merge with a merge commit. In a stack, move the next PR's base to the
     default branch before deleting the merged branch.
 
