@@ -198,7 +198,7 @@ def lane(
     """
     if isinstance(known, str) or isinstance(expected, bool):
         raise TypeError("known is a collection of paths and expected a whole number")
-    names = [name for file in files for name in (file.path, file.previous) if name]
+    names = [name for file in files for name in (file.path, file.previous) if name is not None]
     paths = [file.path for file in files]
     if not files:
         return Lane(False, True, "no changed file could be read")
@@ -216,10 +216,10 @@ def lane(
             return Lane(False, False, "a kind of change the gate does not know")
         if (file.status == "renamed") != bool(file.previous):
             return Lane(False, False, "a rename and its earlier name do not agree")
-        if not all(is_document(name, gate) for name in (file.path, file.previous) if name):
+        if not all(is_document(name, gate) for name in (file.path, file.previous) if name is not None):
             return Lane(False, False, "files other than documents change")
         if file.status != "removed" and file.mode != REGULAR:
             return Lane(False, False, "a document that is not a regular file")
-        if any(folded.get(n.casefold(), n) != n for n in (file.path, file.previous) if n):
+        if any(folded.get(n.casefold(), n) != n for n in (file.path, file.previous) if n is not None):
             return Lane(False, False, "a path that differs from an existing one only by case")
     return Lane(True, False, "documents only")

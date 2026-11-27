@@ -340,6 +340,14 @@ def test_a_case_collision_counts_under_every_name_a_file_has_or_had() -> None:
     assert _of(_file("docs/new.md", "renamed", "docs/Foo.md"), known=known).light is True
 
 
+def test_an_empty_path_is_a_path_and_is_never_a_document() -> None:
+    """A file with no name is judged like any other name: it is not on the allow-list."""
+    for kind in ("added", "modified", "removed"):
+        assert _of(_file("", kind)).light is False, kind
+    assert _of(_file("docs/a.md", "modified"), _file("", "removed"), expected=2).light is False
+    assert _of(_file("docs/a.md", "renamed", "")).light is False
+
+
 def test_the_paths_of_the_default_branch_and_the_count_must_be_given_properly() -> None:
     """A caller cannot pass one path for the list, or a flag as a count."""
     with pytest.raises(TypeError):
