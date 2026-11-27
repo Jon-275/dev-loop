@@ -105,9 +105,12 @@ jobs:
         # devloop's exit code is not its verdict: it fails only when it could not check.
         # devloop writes the status's name (gate.context) to its outputs before it reads
         # anything; a run that broke before that reports under the default name.
-        if: failure() && steps.head.outputs.sha != ''
+        # It reports on the head devloop judged (its sha output, written as soon as it
+        # knows the head), else on the head the first step found.
+        if: >-
+          failure() && (steps.gate.outputs.sha != '' || steps.head.outputs.sha != '')
         env:
-          SHA: ${{ steps.head.outputs.sha }}
+          SHA: ${{ steps.gate.outputs.sha || steps.head.outputs.sha }}
           CONTEXT: ${{ steps.gate.outputs.context || 'Merge gate' }}
         run: >-
           gh api "repos/${GITHUB_REPOSITORY}/statuses/${SHA}" -f state=failure

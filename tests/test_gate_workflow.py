@@ -87,9 +87,11 @@ GATE_JOB: dict[str, Any] = {
         },
         {
             "name": "Report a run that could not check",
-            "if": "failure() && steps.head.outputs.sha != ''",
+            # The head devloop judged, when it got that far: a run that waited may have
+            # judged a newer head than the first step found.
+            "if": ("failure() && (steps.gate.outputs.sha != '' || steps.head.outputs.sha != '')"),
             "env": {
-                "SHA": "${{ steps.head.outputs.sha }}",
+                "SHA": "${{ steps.gate.outputs.sha || steps.head.outputs.sha }}",
                 "CONTEXT": "${{ steps.gate.outputs.context || 'Merge gate' }}",
             },
             "run": (
