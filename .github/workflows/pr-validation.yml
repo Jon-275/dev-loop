@@ -1,0 +1,89 @@
+# Call on code events. Keep label events in the separate pr-size.yml caller.
+# Changes and changelog read the merge ref's first parent for rules. Doctor
+# checks the layout the PR would merge.
+name: PR validation
+
+on:
+  workflow_call:
+    inputs:
+      devloop:
+        description: Where to install devloop from (a uv requirement, or . in dev-loop itself)
+        required: true
+        type: string
+    outputs:
+      code:
+        description: '"false" only when the pull request changes nothing but documentation'
+        value: ${{ jobs.changes.outputs.code }}
+      doc_tests:
+        description: The test files a docs-only change must still run
+        value: ${{ jobs.changes.outputs.doc_tests }}
+
+permissions:
+  contents: read
+
+jobs:
+  # Is this a docs-only pull request? Every doubt says "code", so every check runs.
+  changes:
+    name: Changes
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    outputs:
+      code: ${{ steps.changes.outputs.code }}
+      doc_tests: ${{ steps.changes.outputs.doc_tests }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+          fetch-depth: 2 # the merge ref and its first parent: HEAD^1..HEAD is the PR
+      - uses: astral-sh/setup-uv@1db35dd8eee11c5894872e0b383ae6c406cf738d # v10.4.0
+        with:
+          version: "0.13.7"
+          python-version: "3.12.14"
+      - name: Install devloop
+        env:
+          DEVLOOP: ${{ inputs.devloop }}
+        run: uv tool install "$DEVLOOP"
+      - id: changes
+        run: devloop changes --event "$GITHUB_EVENT_NAME" --config-from HEAD^1
+
+  # The rendered skills, adapters and AGENTS.md blocks match their sources.
+  # This one reads the pull request's own devloop.toml on purpose: the file must be valid,
+  # and the layout must match it, once the pull request is merged.
+  doctor:
+    name: devloop doctor
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@1db35dd8eee11c5894872e0b383ae6c406cf738d # v10.4.0
+        with:
+          version: "0.13.7"
+          python-version: "3.12.14"
+      - name: Install devloop
+        env:
+          DEVLOOP: ${{ inputs.devloop }}
+        run: uv tool install "$DEVLOOP"
+      - run: devloop doctor --check
+
+  # Invalid changelog fragments fail; code with no fragment gets a note.
+  changelog:
+    name: Changelog
+    if: ${{ github.event_name == 'pull_request' }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+          fetch-depth: 2
+      - uses: astral-sh/setup-uv@1db35dd8eee11c5894872e0b383ae6c406cf738d # v10.4.0
+        with:
+          version: "0.13.7"
+          python-version: "3.12.14"
+      - name: Install devloop
+        env:
+          DEVLOOP: ${{ inputs.devloop }}
+        run: uv tool install "$DEVLOOP"
+      - run: devloop changelog check --pr --config-from HEAD^1

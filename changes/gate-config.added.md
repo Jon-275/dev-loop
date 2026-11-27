@@ -1,1 +1,0 @@
-- **A `[gate]` table in `devloop.toml`, for the merge gate.** It names the gate's commit status, the documents of the light lane, extra control files, the statuses and checks the strict lane needs, the statuses that block the light lane, the trusted bots and the size of a light change. `statuses` defaults to `labels.wait_for` plus `Review labels`. Nothing reads the table yet.
