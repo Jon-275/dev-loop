@@ -52,6 +52,8 @@ def _parser() -> argparse.ArgumentParser:
         ("agent", "add an opted-in commit trailer or install its commit-msg hook"),
         ("council", "check the council's role cards, or plan which roles review a change"),
         ("bench", "run a coding agent on the conformance benchmark's tasks (local only)"),
+        ("release-notes", "print a version's section of the changelog, as its release notes"),
+        ("release-due", "in CI, say whether a push to main is a new version to tag and publish"),
     ):
         sub = commands.add_parser(name, help=text)
         sub.add_argument("--root", type=Path, default=Path.cwd(), help="project root")
@@ -69,6 +71,10 @@ def _parser() -> argparse.ArgumentParser:
         if name == "metrics":
             sub.add_argument("--days", type=int, default=7, help="the window, in days")
             sub.add_argument("--json", type=Path, default=None, help="also write the figures")
+        if name == "release-notes":
+            sub.add_argument("--version", help="X.Y.Z (default: the version in pyproject.toml)")
+        if name == "release-due":
+            sub.add_argument("--output", required=True, type=Path, help="write the notes here")
         if name == "gate":
             sub.add_argument("--pr", required=True, type=int, help="the pull request number")
             sub.add_argument("--repo", required=True, help="owner/name")
@@ -262,6 +268,16 @@ def main(argv: Sequence[str] | None = None) -> int:
         from devloop.gate.reader import main as gate_main
 
         return gate_main(root, args.repo, args.pr, args.run_url, os.environ)
+    if args.command in ("release-notes", "release-due"):
+        from devloop import release
+
+        try:
+            if args.command == "release-notes":
+                return release.main_notes(root, args.version)
+            return release.main_due(root, args.output, os.environ)
+        except ConfigError as exc:
+            print(f"devloop: {exc}", file=sys.stderr)
+            return 2
     if args.command == "lessons":
         from devloop.lessons import main as lessons_main
 

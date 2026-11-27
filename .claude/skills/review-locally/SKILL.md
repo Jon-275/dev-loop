@@ -18,10 +18,21 @@ PR finds less. A local review posts nothing; it prints the summary and each find
    - **Real:** write a test that fails because of it, fix it, and re-run the gates.
    - **Not real:** note why in one line; you will need the reason if the PR's reviewer
      raises it again.
-4. Re-run the review once after the fixes. Stop when it raises nothing new; do not loop on
-   wording-only findings.
+4. Re-run the review once after the fixes, on the commits since the first pass only. A
+   local run does not remember the first, so give it that commit as the base:
+   - before fixing, note the commit the first pass reviewed (`git rev-parse HEAD`);
+   - commit the fixes;
+   - run `devloop review --local --provider <name> --base <that commit>`.
+
+   Run again each probe an earlier finding came with (the command, the failing input).
+   Stop when it raises nothing new; do not loop on wording-only findings.
 5. If the change touches workflows, secrets or anything a pull request can influence, also
    do a security review of the diff and fix what it finds.
+
+The reviewer must not have seen your reasoning. `devloop review --local` reads only the
+diff and the rules. When you ask an agent to review instead, start a fresh agent or
+session and give it the diff and the rules, not your summary or your conclusion: a
+reviewer told why the change is right tends to agree.
 
 ## When not to use
 
