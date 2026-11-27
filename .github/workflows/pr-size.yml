@@ -1,0 +1,40 @@
+# Call from a pull_request workflow, including labeled and unlabeled.
+# The base defines the budget. Read current labels from the API on each run.
+name: PR size
+
+on:
+  workflow_call:
+    inputs:
+      devloop:
+        description: Where to install devloop from (a uv requirement, or . in dev-loop itself)
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  size:
+    name: PR size
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      pull-requests: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+          fetch-depth: 2
+      - uses: astral-sh/setup-uv@1db35dd8eee11c5894872e0b383ae6c406cf738d # v10.4.0
+        with:
+          version: "0.13.7"
+          python-version: "3.12.14"
+      - name: Install devloop
+        env:
+          DEVLOOP: ${{ inputs.devloop }}
+        run: uv tool install "$DEVLOOP"
+      - name: Measure the pull request
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: devloop size --event "$GITHUB_EVENT_NAME" --config-from HEAD^1
