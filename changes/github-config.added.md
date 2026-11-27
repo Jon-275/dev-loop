@@ -1,0 +1,1 @@
+- **A `[github]` table in `devloop.toml`.** It holds the repository settings a project expects on GitHub (required checks, administrators, force pushes, the workflow token, secret scanning, merge methods and more). The defaults are the baseline of `docs/github-settings.md`, and any key can be `"skip"`. `devloop doctor --repo` will read it.

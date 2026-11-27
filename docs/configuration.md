@@ -142,3 +142,28 @@ The gate reads this table from the default branch, never from the pull request.
 neither they nor `light_blocks` can name the gate's own status. `context` cannot be a status
 another devloop job posts: `Review labels`, `Council review`, a reviewer's
 `<Name> review` or a `labels.wait_for` status.
+
+## [github]
+
+The repository settings `devloop doctor --repo OWNER/NAME` expects to find on GitHub. The
+defaults are the baseline of [GitHub settings](github-settings.md), so list only what the
+project does differently on purpose. Set any key to `"skip"` and it is not judged; the
+report still names it.
+
+| Key | Default | Meaning |
+|---|---|---|
+| `required_checks` | `[]` | The status checks the default branch must require, by name: exactly these, from classic branch protection and rulesets together. Empty means the project has not said, and the setting is reported as not judged. |
+| `required_checks_bound` | `true` | Every required check is bound to the app that posts it, and there is at least one. `false` accepts a check from any source. |
+| `enforce_admins` | `true` | The branch rules apply to administrators too. |
+| `allow_force_pushes` | `false` | Whether a force push to the default branch is allowed. |
+| `allow_deletions` | `false` | Whether the default branch can be deleted. |
+| `conversation_resolution` | `true` | Every conversation must be resolved before a merge. |
+| `code_owner_review` | `"advice"` | Whether a code owner's review is required: `true`, `false`, or `"advice"` for a `CODEOWNERS` file that guides reviewers and is not required (judged as `false`). |
+| `default_token_read_only` | `true` | The default workflow token can only read. |
+| `sha_pinning_required` | `true` | The repository refuses an action that is not pinned to a full commit SHA. |
+| `fork_pr_approval` | `"all_external_contributors"` | Who needs approval before a fork's workflows run: GitHub's policy name (`first_time_contributors_new_to_github`, `first_time_contributors` or `all_external_contributors`). |
+| `secret_scanning` | `true` | Secret scanning is on. |
+| `push_protection` | `true` | Push protection is on. |
+| `private_vulnerability_reporting` | `true` | Private vulnerability reporting is on. |
+| `delete_branch_on_merge` | `true` | A merged pull request's branch is deleted. |
+| `merge_methods` | `["merge"]` | The merge methods a pull request may use, from `merge`, `squash` and `rebase`: exactly these. |

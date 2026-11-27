@@ -9,7 +9,7 @@ from __future__ import annotations
 import re
 import tomllib
 from collections.abc import Callable, Mapping
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, fields
 from pathlib import Path, PurePosixPath
 from typing import Any
 
@@ -273,6 +273,46 @@ class Gate:
     max_light_files: int = 100
 
 
+#: The value that tells ``devloop doctor --repo`` not to judge a ``[github]`` setting.
+SKIP = "skip"
+#: GitHub's names for who needs approval before a fork's workflows run.
+FORK_APPROVAL_POLICIES = (
+    "first_time_contributors_new_to_github",
+    "first_time_contributors",
+    "all_external_contributors",
+)
+#: The ways a pull request can be merged, as ``github.merge_methods`` names them.
+MERGE_METHODS = ("merge", "squash", "rebase")
+
+
+@dataclass(frozen=True)
+class GitHub:
+    """``[github]``: the repository settings ``devloop doctor --repo`` expects to find.
+
+    The defaults are the baseline of ``docs/github-settings.md``, so a project lists only
+    what it does differently on purpose. Any key may be ``"skip"``: it is then not judged.
+    ``required_checks`` empty means the project has not said which checks it requires, so
+    that setting is reported as not judged.
+    """
+
+    required_checks: tuple[str, ...] | str = ()
+    required_checks_bound: bool | str = True
+    enforce_admins: bool | str = True
+    allow_force_pushes: bool | str = False
+    allow_deletions: bool | str = False
+    conversation_resolution: bool | str = True
+    #: true: required; false: not required; "advice": CODEOWNERS is advice, not required.
+    code_owner_review: bool | str = "advice"
+    default_token_read_only: bool | str = True
+    sha_pinning_required: bool | str = True
+    fork_pr_approval: str = "all_external_contributors"
+    secret_scanning: bool | str = True
+    push_protection: bool | str = True
+    private_vulnerability_reporting: bool | str = True
+    delete_branch_on_merge: bool | str = True
+    merge_methods: tuple[str, ...] | str = ("merge",)
+
+
 @dataclass(frozen=True)
 class Config:
     """A validated ``devloop.toml``."""
@@ -289,6 +329,7 @@ class Config:
     changelog: Changelog = field(default_factory=Changelog)
     docs: Docs = field(default_factory=Docs)
     gate: Gate = field(default_factory=Gate)
+    github: GitHub = field(default_factory=GitHub)
 
     @classmethod
     def default(cls, version: str) -> Config:
@@ -324,6 +365,7 @@ def parse_config(text: str) -> Config:
         "changelog",
         "docs",
         "gate",
+        "github",
     }
     for name in data:
         if name not in sections:
@@ -428,6 +470,7 @@ def parse_config(text: str) -> Config:
             tests=_strs(docs, "docs.tests", "tests", Docs().tests),
         ),
         gate=_gate(_table(data, "gate", _GATE_KEYS), changelog.dir, wait_for, reviewers),
+        github=_github(_table(data, "github", {f.name for f in fields(GitHub)})),
     )
 
 
@@ -744,4 +787,72 @@ def _gate(
         max_light_files=_pos_int(
             table.get("max_light_files", d.max_light_files), "gate.max_light_files"
         ),
+    )
+
+
+def _switch(table: Mapping[str, Any], key: str, default: bool | str) -> bool | str:
+    """Return the ``[github]`` setting at ``key``: true, false or ``"skip"``."""
+    value = table.get(key, default)
+    if isinstance(value, bool):
+        return value
+    if value == SKIP:
+        return SKIP
+    raise ConfigError(f'github.{key} must be true, false or "{SKIP}"')
+
+
+def _names(
+    table: Mapping[str, Any], key: str, default: tuple[str, ...] | str
+) -> tuple[str, ...] | str:
+    """Return the ``[github]`` list at ``key``, each name once, or ``"skip"``."""
+    if table.get(key, default) == SKIP:
+        return SKIP
+    values = _strs(table, f"github.{key}", key, tuple(default))
+    if len(set(values)) != len(values):
+        raise ConfigError(f"github.{key} names a check twice")
+    return values
+
+
+def _github(table: Mapping[str, Any]) -> GitHub:
+    """Validate ``[github]``: each setting is its expected value or ``"skip"``."""
+    d = GitHub()
+    owner = table.get("code_owner_review", d.code_owner_review)
+    if not isinstance(owner, bool) and owner not in ("advice", SKIP):
+        raise ConfigError(f'github.code_owner_review must be true, false, "advice" or "{SKIP}"')
+    approval = table.get("fork_pr_approval", d.fork_pr_approval)
+    if not isinstance(approval, str) or approval not in (*FORK_APPROVAL_POLICIES, SKIP):
+        raise ConfigError(
+            f'github.fork_pr_approval must be one of {FORK_APPROVAL_POLICIES} or "{SKIP}"'
+        )
+    methods = table.get("merge_methods", list(d.merge_methods))
+    if methods != SKIP and (
+        not isinstance(methods, list)
+        or not methods
+        or len(set(methods)) != len(methods)
+        or not all(m in MERGE_METHODS for m in methods)
+    ):
+        raise ConfigError(
+            f'github.merge_methods must be a list of {MERGE_METHODS}, each once, or "{SKIP}"'
+        )
+    switches = {
+        key: _switch(table, key, getattr(d, key))
+        for key in (
+            "required_checks_bound",
+            "enforce_admins",
+            "allow_force_pushes",
+            "allow_deletions",
+            "conversation_resolution",
+            "default_token_read_only",
+            "sha_pinning_required",
+            "secret_scanning",
+            "push_protection",
+            "private_vulnerability_reporting",
+            "delete_branch_on_merge",
+        )
+    }
+    return GitHub(
+        required_checks=_names(table, "required_checks", d.required_checks),
+        code_owner_review=owner,
+        fork_pr_approval=approval,
+        merge_methods=SKIP if methods == SKIP else tuple(methods),
+        **switches,
     )
