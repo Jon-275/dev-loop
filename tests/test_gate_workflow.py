@@ -15,6 +15,9 @@ from typing import Any
 import pytest
 import yaml
 
+from devloop.config import load_config
+from devloop.gate import rules
+
 WORKFLOWS = Path(__file__).resolve().parents[1] / ".github" / "workflows"
 GATE = "./.github/workflows/gate.yml"
 PERMISSIONS = {
@@ -184,6 +187,20 @@ def test_replies_run_the_gate_after_the_labels_check_but_not_for_a_fork() -> Non
     )
     # Every trigger of this workflow is a review event, so the fork rule covers them all.
     assert all(name.startswith("pull_request_review") for name in _triggers(workflow))
+
+
+def test_dev_loops_own_decision_records_are_control_files() -> None:
+    """A decision binds the code, so a change to one is never in the light lane here."""
+    root = WORKFLOWS.parents[1]
+    gate = rules.rules(load_config(root / "devloop.toml"))
+    records = sorted(path.name for path in (root / "docs" / "decisions").glob("*.md"))
+    assert len(records) >= 6
+    for name in records:
+        file = rules.ChangedFile(f"docs/decisions/{name}", "modified", None, "100644")
+        found = rules.lane([file], expected=1, known=(), gate=gate)
+        assert (found.light, found.control) == (False, True), name
+    other = rules.ChangedFile("docs/gate.md", "modified", None, "100644")
+    assert rules.lane([other], expected=1, known=(), gate=gate).light is True
 
 
 def _find_head(tmp_path: Path, number: str, gh: str) -> tuple[int, str, str]:
