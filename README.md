@@ -65,9 +65,13 @@ Full documentation: [concepts](docs/concepts.md), [adoption](docs/adoption.md),
 
 Shared workflows run the checks, so every project's CI calls the same code:
 
-- [`pr-hygiene.yml`](.github/workflows/pr-hygiene.yml): `devloop doctor --check`,
-  `size`, `changelog check --pr` and `changes`. Its `code` output is `"false"` for a
-  docs-only pull request, so the caller can skip its code checks.
+- [`pr-validation.yml`](.github/workflows/pr-validation.yml): `devloop doctor --check`,
+  `changelog check --pr` and `changes`, on code events. Its `code` output is `"false"`
+  for a docs-only pull request, so the caller can skip its code checks.
+- [`pr-size.yml`](.github/workflows/pr-size.yml): `devloop size`, from a separate caller
+  that also runs when a label is added or removed.
+- [`pr-hygiene.yml`](.github/workflows/pr-hygiene.yml): the two above in one workflow,
+  for callers that already use it.
 - [`drift-check.yml`](.github/workflows/drift-check.yml): the standalone doctor check for branch protection,
   called separately from label events.
 - [`review.yml`](.github/workflows/review.yml): `devloop review`, one job per reviewer,

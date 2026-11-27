@@ -12,6 +12,7 @@ import argparse
 import re
 from pathlib import Path
 
+import pytest
 import yaml
 
 from devloop import cli
@@ -58,6 +59,22 @@ def readme_commands(text: str) -> set[str]:
     return set(re.findall(r"`devloop ([a-z][a-z-]*)", section(text, "Commands")))
 
 
+def readme_council_actions(text: str) -> set[str]:
+    """Return the ``devloop council`` actions README names, written ``a|b|c``."""
+    found = re.search(r"`devloop council ([a-z|]+)`", section(text, "Commands"))
+    assert found, "README names no `devloop council <action>|<action>`"
+    return set(found.group(1).split("|"))
+
+
+def council_actions(capsys: pytest.CaptureFixture[str]) -> set[str]:
+    """Return every ``devloop council`` action, from the usage line of its own help."""
+    with pytest.raises(SystemExit):
+        cli.main(["council", "--help"])
+    usage = re.search(r"\{([a-z,-]+)\}", capsys.readouterr().out)
+    assert usage, "devloop council --help lists no actions"
+    return set(usage.group(1).split(","))
+
+
 def adoption_workflows(text: str) -> set[str]:
     """Return the workflows in the first column of the adoption page's table."""
     return set(re.findall(r"^\| `([\w-]+\.yml)` \|", text, re.M))
@@ -79,6 +96,10 @@ def test_the_readers_find_what_a_page_names() -> None:
     )
     assert readme_commands(page) == {"init", "size", "pr-open"}
     assert readme_workflows(page) == {"a-b.yml"}
+    assert readme_council_actions("## Commands\n\n- `devloop council plan|add`: x\n") == {
+        "plan",
+        "add",
+    }
     assert adoption_workflows("| `a.yml` | x |\n| `b` | `c.yml` |\n") == {"a.yml"}
 
 
@@ -90,6 +111,13 @@ def test_readme_lists_exactly_the_shared_workflows() -> None:
 def test_readme_lists_exactly_the_commands() -> None:
     text = (ROOT / "README.md").read_text(encoding="utf-8")
     assert readme_commands(text) == commands()
+
+
+def test_readme_lists_exactly_the_council_actions(capsys: pytest.CaptureFixture[str]) -> None:
+    text = (ROOT / "README.md").read_text(encoding="utf-8")
+    actions = council_actions(capsys)
+    assert {"plan", "report"} <= actions  # the help was read, not an empty usage line
+    assert readme_council_actions(text) == actions
 
 
 def test_the_adoption_page_lists_exactly_the_shared_workflows() -> None:
