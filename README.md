@@ -37,6 +37,9 @@ devloop doctor --check    # check nothing has drifted; run this in CI
   committed branch locally, the same way.
 - `devloop changelog check|build`: check the changelog fragments in `changes/`, or add
   them to `CHANGELOG.md` (see [changes/README.md](changes/README.md)).
+- `devloop release-notes [--version X.Y.Z]`: print a version's section of `CHANGELOG.md`,
+  as its release notes. `devloop release-due`: in CI, on a push to main, say whether the
+  commit set a new version to tag and publish ([release.yml](.github/workflows/release.yml)).
 - `devloop changes`: in CI, say whether a pull request changes only documentation, so
   the code checks can be skipped.
 - `devloop pr-open [branch ...]`: refuse to push to a branch whose pull request has
@@ -55,8 +58,11 @@ devloop doctor --check    # check nothing has drifted; run this in CI
   its head ([merge gate](docs/gate.md)).
 - `devloop metrics [--days N]`: the review loop's figures for the pull requests merged in
   a window, per authoring tool. `devloop agent --install` adds the `Agent:` trailer.
-- `devloop council plan|check|library|add`: the council's role cards
-  ([skills](docs/skills.md): `council-design`, `council-build`, `council-review`).
+- `devloop council plan|check|library|add|report`: the council's role cards, and the
+  `Council review` verdict for a change ([the council](docs/council.md);
+  [skills](docs/skills.md): `council-design`, `council-build`, `council-review`).
+- `devloop bench`: run a coding agent on the conformance benchmark's tasks, on your own
+  machine only ([benchmark](docs/benchmark.md)).
 
 Full documentation: [concepts](docs/concepts.md), [adoption](docs/adoption.md),
 [configuration](docs/configuration.md) and [skills](docs/skills.md). Build it with
@@ -66,9 +72,13 @@ Full documentation: [concepts](docs/concepts.md), [adoption](docs/adoption.md),
 
 Shared workflows run the checks, so every project's CI calls the same code:
 
-- [`pr-hygiene.yml`](.github/workflows/pr-hygiene.yml): `devloop doctor --check`,
-  `size`, `changelog check --pr` and `changes`. Its `code` output is `"false"` for a
-  docs-only pull request, so the caller can skip its code checks.
+- [`pr-validation.yml`](.github/workflows/pr-validation.yml): `devloop doctor --check`,
+  `changelog check --pr` and `changes`, on code events. Its `code` output is `"false"`
+  for a docs-only pull request, so the caller can skip its code checks.
+- [`pr-size.yml`](.github/workflows/pr-size.yml): `devloop size`, from a separate caller
+  that also runs when a label is added or removed.
+- [`pr-hygiene.yml`](.github/workflows/pr-hygiene.yml): the two above in one workflow,
+  for callers that already use it.
 - [`drift-check.yml`](.github/workflows/drift-check.yml): the standalone doctor check for branch protection,
   called separately from label events.
 - [`main-health.yml`](.github/workflows/main-health.yml): `devloop main-health`, as the
@@ -77,9 +87,22 @@ Shared workflows run the checks, so every project's CI calls the same code:
   on a schedule; one issue while the repository's settings differ from `devloop.toml`.
 - [`review.yml`](.github/workflows/review.yml): `devloop review`, one job per reviewer,
   from a caller on `pull_request_target`.
+- [`unapprove.yml`](.github/workflows/unapprove.yml): removes the approval label from an
+  outside pull request on every push, so new commits are looked at before they are reviewed.
+- [`labels.yml`](.github/workflows/labels.yml): `devloop labels`, the `Review labels`
+  status, after the review jobs and on every review reply.
+- [`gate.yml`](.github/workflows/gate.yml): `devloop gate`, the one `Merge gate` status,
+  as the last job of the review and labels callers.
+- [`council.yml`](.github/workflows/council.yml): the `Council review` status, pending
+  while a pull request's tier needs a council review.
+- [`main-health.yml`](.github/workflows/main-health.yml): `devloop main-health`, as the
+  caller's last job on every push to main.
+- [`metrics.yml`](.github/workflows/metrics.yml): `devloop metrics`, from a weekly
+  schedule.
 
-See the callers for [CI](.github/workflows/ci.yml), [drift](.github/workflows/repository-drift.yml)
-and [reviews](.github/workflows/review-trusted.yml).
+See the callers for [CI](.github/workflows/ci.yml), [drift](.github/workflows/repository-drift.yml),
+[reviews](.github/workflows/review-trusted.yml), [review replies](.github/workflows/labels-replies.yml)
+and [metrics](.github/workflows/metrics-weekly.yml).
 
 ## What `init` writes
 

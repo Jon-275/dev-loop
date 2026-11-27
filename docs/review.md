@@ -1,7 +1,8 @@
 # Model reviews
 
 `devloop review --provider NAME` reviews a pull request with a model and posts each
-finding as an inline thread. `main` merges only when every thread is resolved, so each
+blocking finding as an inline thread. With conversation resolution required on the
+default branch, a pull request merges only when every thread is resolved, so each
 finding is fixed or answered.
 
 ## Reviewers
