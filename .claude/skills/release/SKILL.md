@@ -6,6 +6,9 @@ description: Release a new version (bump the version, build the changelog from i
 # Release
 
 A release is its own small PR, merged like any other, then a tag on its merge commit.
+For a model or generated report distributed with matching guides or previews, also
+follow [the artifact bundle procedure](references/artifact-bundles.md). It keeps the
+prior site active until the new downloads have been verified.
 
 ## Steps
 
