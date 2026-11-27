@@ -11,7 +11,10 @@ locally, and opens a pull request. From there CI decides, not the agent:
    and a commit status that fails closed.
 3. **Review labels** (`labels.yml`): every finding thread needs a member's reply starting
    with a label word, and the status waits for the reviews to finish.
-4. **Merge** only when the required statuses pass and every thread is resolved.
+4. **Merge gate** (`gate.yml`, optional): one status that stands for the reviews and the
+   labels, so branch protection requires one name. A pull request of documents only waits
+   for no reviewer ([merge gate](gate.md)).
+5. **Merge** only when the required statuses pass and every thread is resolved.
 
 Instructions explain the rules; the gates hold them. See
 [decision 0001](decisions/0001-enforce-in-git-and-ci.md).

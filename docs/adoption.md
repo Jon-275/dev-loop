@@ -29,8 +29,10 @@ Pin each call to a release tag or commit. Each workflow's header shows the job t
 | `pr-hygiene.yml` | `pull_request` | combined advisory hygiene for existing callers |
 | `drift-check.yml` | separate `pull_request` workflow on code and review lifecycle events | repository drift verdict for branch protection |
 | `review.yml` | `pull_request_target` | one job per model reviewer ([model reviews](review.md)) |
+| `unapprove.yml` | the same `pull_request_target` workflow as the reviews | removes the approval label from an outside pull request on every push ([outside pull requests](review.md#outside-pull-requests)) |
 | `labels.yml` | after the review jobs, and on review replies | the `Review labels` status |
 | `gate.yml` | last job of the review and labels callers | the `Merge gate` status: one required status in place of one per reviewer ([merge gate](gate.md)) |
+| `council.yml` | `pull_request_target`, on every push to a pull request | the `Council review` status, for projects with a council ([the council](council.md#the-council-review-status)) |
 | `main-health.yml` | `push` to the default branch, last job | opens and closes a "main is red" issue |
 | `metrics.yml` | `schedule`, weekly | the weekly report, per authoring tool |
 
@@ -53,7 +55,8 @@ statuses:
 
 - the caller's code checks and its dedicated repository drift check;
 - `<Name> review` for each model reviewer (for example `Gemini review`);
-- `Review labels`.
+- `Review labels`;
+- `Council review`, if the project has a council.
 
 Or require the one `Merge gate` status in place of the reviewers' statuses and
 `Review labels` ([merge gate](gate.md#rolling-it-out)).
@@ -61,7 +64,7 @@ Or require the one `Merge gate` status in place of the reviewers' statuses and
 Block force pushes and deletion, and apply the rules to administrators too. A required
 status is what turns a rule into a gate.
 
-Use a separate caller like the [repository drift workflow](https://github.com/Jon-275/dev-loop/blob/main/.github/workflows/repository-drift.yml).
+For the drift check, use a separate caller like the [repository drift workflow](https://github.com/Jon-275/dev-loop/blob/main/.github/workflows/repository-drift.yml).
 Replace its local workflow call and `devloop: '.'` with the same pinned commit for the
 reusable workflow and the installed tool. Use the repository's default branch and keep the `edited` trigger for retargeted PRs. If
 using a merge queue, also trigger the caller for `merge_group` with `checks_requested`.
