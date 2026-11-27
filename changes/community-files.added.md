@@ -1,1 +1,0 @@
-- **The repository has the files it tells adopters to have.** `SECURITY.md` (private reporting), `CONTRIBUTING.md` (set-up, what a change needs, and when a pull request is sent to the model reviewers), a `CODEOWNERS` file for the workflows and review code, a pull request template and two issue templates.
