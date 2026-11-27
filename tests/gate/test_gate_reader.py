@@ -697,3 +697,43 @@ def test_settings_or_outputs_that_cannot_be_read_or_written_are_start_up_errors(
     (tmp_path / "devloop.toml").mkdir()
     assert cli(args) == 2
     assert capsys.readouterr().err == "devloop gate: devloop.toml could not be read\n"
+
+
+# The request budget (docs/cost.md, "GitHub API reads per run"). The workflow token has an
+# hourly limit and every reply starts a run, so a change that adds a read must show here.
+
+COST = (Path(__file__).resolve().parents[2] / "docs" / "cost.md").read_text(encoding="utf-8")
+LANE_READS = [
+    "repos/o/r/pulls/7",
+    f"repos/o/r/compare/{BASE}...{HEAD}?per_page=1&page=1",
+    f"repos/o/r/git/trees/{HEAD}?recursive=1",
+    f"repos/o/r/git/trees/{BASE}?recursive=1",
+]
+STATUSES = f"repos/o/r/commits/{HEAD}/statuses?per_page=100&page=1"
+CHECK_RUNS = f"repos/o/r{CHECKS}&per_page=100&page=1"
+BUDGET = "the budget is {} (docs/cost.md, 'GitHub API reads per run'); update both if it is needed"
+
+
+def test_a_light_lane_evaluation_makes_ten_reads() -> None:
+    """The light lane reads what the strict lane reads: a check it cannot read is a failure.
+
+    Its verdict does not use the check runs, but the read stays: an unreadable review is
+    "could not check" in either lane (test_whatever_cannot_be_read_is_a_failure_never_a_pass).
+    """
+    hub = Hub([_file()])
+    assert hub.run() == 0 and hub.last[0] == "success"
+    # Twice: the reviews and the head are read again after the verdict is posted.
+    expected = [*LANE_READS, *[STATUSES, CHECK_RUNS, "repos/o/r/pulls/7"] * 2]
+    assert hub.asked == expected, f"{len(hub.asked)} reads; " + BUDGET.format(len(expected))
+    assert len(hub.posted) == 2
+    assert "| `devloop gate`, light lane, one check | 10 | 0 | 2 | 12 |" in COST
+
+
+def test_a_strict_lane_evaluation_with_two_statuses_and_one_check_makes_ten_reads() -> None:
+    """One listing answers every status; each check name is one more read per pass."""
+    hub = _reviewed(CORE)
+    assert hub.run() == 0 and hub.last[0] == "success"
+    expected = [*LANE_READS, *[STATUSES, CHECK_RUNS, "repos/o/r/pulls/7"] * 2]
+    assert hub.asked == expected, f"{len(hub.asked)} reads; " + BUDGET.format(len(expected))
+    assert len(GATE.statuses) == 2 and len(GATE.checks) == 1 and len(hub.posted) == 2
+    assert "| `devloop gate`, strict lane, two statuses and one check | 10 | 0 | 2 | 12 |" in COST

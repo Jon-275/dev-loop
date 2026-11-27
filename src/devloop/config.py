@@ -117,6 +117,8 @@ class Review:
     secret_allow: tuple[str, ...] = ()
     #: The most characters an approved outside pull request may send; 0 is no limit.
     outside_max_chars: int = 150_000
+    #: The most reviews one reviewer gives one pull request; 0 is no cap.
+    max_rounds: int = 0
 
 
 @dataclass(frozen=True)
@@ -347,6 +349,7 @@ def parse_config(text: str) -> Config:
             "secret_scan",
             "secret_allow",
             "outside_max_chars",
+            "max_rounds",
         },
     )
     labels = _table(data, "labels", {"prefixes", "wait_for", "wait_for_checks"})
@@ -386,6 +389,9 @@ def parse_config(text: str) -> Config:
             outside_max_chars=_non_negative_int(
                 review.get("outside_max_chars", d_rev.outside_max_chars),
                 "review.outside_max_chars",
+            ),
+            max_rounds=_non_negative_int(
+                review.get("max_rounds", d_rev.max_rounds), "review.max_rounds"
             ),
         ),
         labels=Labels(

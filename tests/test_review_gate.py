@@ -46,7 +46,12 @@ def _decide(tmp_path: Path, **env: str) -> dict[str, str]:
     output.write_text("", encoding="utf-8")
     done = subprocess.run(
         ["bash", "-euo", "pipefail", "-c", script],
-        env={"PATH": "/usr/bin:/bin", "GITHUB_OUTPUT": str(output), **env},
+        env={
+            "PATH": "/usr/bin:/bin",
+            "GITHUB_OUTPUT": str(output),
+            "AGAIN_LABEL": "review-again",
+            **env,
+        },
         cwd=tmp_path,
         capture_output=True,
         text=True,
@@ -191,6 +196,7 @@ def test_only_the_gate_lets_the_job_with_the_key_run() -> None:
     assert set(decide["env"].values()) == {
         "${{ inputs.gate }}",
         "${{ inputs.approval_label }}",
+        "${{ inputs.again_label }}",
         "${{ inputs.trusted_bots }}",
         "${{ github.event.pull_request.author_association }}",
         "${{ github.event.pull_request.user.login }}",
