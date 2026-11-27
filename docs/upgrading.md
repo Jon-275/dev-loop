@@ -14,6 +14,19 @@ Upgrade in its own pull request:
 6. Run `devloop doctor --check` and the project's own gates, then commit everything
    together.
 
+## From 0.12 to 0.13
+
+Nothing breaks. Three things to know:
+
+- **The merge gate's workflow.** `gate.yml` has a `context` input, `Merge gate` by
+  default. If you set `gate.context`, pass the same name to the workflow; `devloop gate`
+  does not start when they differ.
+- **Review rounds.** `review.max_rounds` is off by default. If you turn it on, create
+  the `review-again` label, which a maintainer adds to get one more review.
+- **Repository settings.** `devloop doctor --repo OWNER/NAME` compares the live GitHub
+  settings with a `[github]` table. It reads only; list `required_checks` there so they
+  are judged. See [GitHub settings](github-settings.md).
+
 ## From 0.11 to 0.12
 
 - **Model reviews.** `review.yml` now reviews only the owner, members, collaborators and
