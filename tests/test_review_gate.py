@@ -182,7 +182,8 @@ def test_only_the_gate_lets_the_job_with_the_key_run() -> None:
     assert review["needs"] == "gate"
     assert review["if"] == "needs.gate.outputs.run == 'true'"
     assert "needs.gate.outputs.run" in review["concurrency"]["group"]
-    assert gate["permissions"] == {"statuses": "write"}
+    # contents: read is for the status guard's one read of the branches; nothing is checked out.
+    assert gate["permissions"] == {"contents": "read", "statuses": "write"}
     assert "secrets." not in str(gate)
     assert not any("uses" in step for step in gate["steps"])
     decide = next(s for s in gate["steps"] if s.get("id") == "decide")
@@ -199,8 +200,10 @@ def test_only_the_gate_lets_the_job_with_the_key_run() -> None:
 
 def test_a_waiting_pull_request_is_told_so_on_its_head_commit() -> None:
     """The status says who must act, and is posted only for a waiting pull request."""
-    waiting = _jobs()["gate"]["steps"][1]
-    assert waiting["if"] == "steps.decide.outputs.reason == 'waiting'"
+    waiting = _jobs()["gate"]["steps"][2]
+    assert waiting["if"] == (
+        "steps.decide.outputs.reason == 'waiting' && steps.due.outputs.due == 'true'"
+    )
     assert "state=pending" in waiting["run"]
     assert "Waiting for a maintainer to add the ${APPROVAL_LABEL} label" in waiting["run"]
     assert waiting["env"]["HEAD_SHA"] == "${{ github.event.pull_request.head.sha }}"

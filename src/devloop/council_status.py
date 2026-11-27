@@ -33,6 +33,7 @@ from devloop.council_report import (
     parse_report,
 )
 from devloop.review import feedback as fb
+from devloop.review import status_guard as guard
 from devloop.review.github import GITHUB_API, Http, Reply, http
 from devloop.review.run import pr_tier
 
@@ -56,12 +57,9 @@ class Api:
         """Return one GET's reply: its JSON and the next page's URL."""
         return fb.request("GET", url, self.token, send=self.send, sleep=self.sleep)
 
-    def head(self, number: int) -> str:
-        """Return the pull request's current head commit."""
-        data = self._get(f"{GITHUB_API}/repos/{self.repo}/pulls/{number}").data
-        if not isinstance(data, dict) or not isinstance(data.get("head"), dict):
-            raise fb.FeedbackError(f"GitHub's reply for pull request {number} has no head")
-        return str(data["head"]["sha"])
+    def head(self, number: int) -> guard.Head:
+        """Return the pull request's current head commit and whether its status is due."""
+        return guard.read_head(self.repo, number, self.token, send=self.send, sleep=self.sleep)
 
     def files(self, number: int) -> list[str]:
         """Return every file the pull request changes, over every page."""
@@ -112,15 +110,23 @@ def publish(
     config: Config,
     report: Report | None,
     run_url: str = "",
-) -> Verdict:
+) -> Verdict | None:
     """Judge pull request ``number``'s head and post the Council review status on it.
+
+    Returns None, and posts nothing, for a fork's pull request whose head is also the head
+    of a branch in this repository (:mod:`devloop.review.status_guard`); that holds for a
+    maintainer's report too. The head is read once: the commit judged is the one posted on.
 
     With no ``report`` (CI), a council's success or failure already on the head is kept
     and nothing is posted; CI's own "not required" success is judged again. A verdict
     posted while CI runs can be overwritten with pending (never with a pass): post it
     again. Raises FeedbackError when GitHub cannot be read; then nothing is posted.
     """
-    head = api.head(number)
+    pull = api.head(number)
+    if not pull.due:
+        print(guard.notice(CONTEXT, number, pull.sha))
+        return None
+    head = pull.sha
     paths = api.files(number)
     chosen = plan(cards, paths, pr_tier(paths, config.tiers))
     verdict = judge(report, head, chosen, config.council.require_status, pr=number)
@@ -148,8 +154,9 @@ def _gh(*args: str) -> str:
 def cli(args: argparse.Namespace, cards: Mapping[str, RoleCard], config: Config) -> int:
     """Run ``devloop council report --post``: 0 success, 1 pending or failure, 2 no post.
 
-    2 covers every run that posted nothing: missing settings, an unreadable report, or a
-    GitHub read that failed.
+    2 covers every run that could not post: missing settings, an unreadable report, or a
+    GitHub read that failed. A status that is not due (a fork's pull request on a commit
+    a branch here heads) is 0 with a notice: nothing was posted, and nothing is wrong.
     """
     if args.pr is None:
         print("devloop council report: --post needs --pr", file=sys.stderr)
@@ -176,5 +183,7 @@ def cli(args: argparse.Namespace, cards: Mapping[str, RoleCard], config: Config)
     except fb.FeedbackError as error:  # a failed read fails the run, so it is seen
         print(f"devloop council report: could not read GitHub; nothing posted: {error}")
         return 2
+    if verdict is None:  # not due: publish said why
+        return 0
     print(f"Council review on #{args.pr}: {verdict.state}: {verdict.description}")
     return 0 if verdict.state == "success" else 1

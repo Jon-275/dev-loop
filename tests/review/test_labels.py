@@ -6,7 +6,7 @@ from pathlib import Path
 from typing import Any
 
 import pytest
-from review_helpers import PROVIDER
+from review_helpers import PROVIDER, pull
 
 from devloop.review import feedback as fb
 from devloop.review import labels as lb
@@ -96,6 +96,11 @@ class Api:
         self.then = then
         self.fail_after_verdict = ""
         self.posted: list[tuple[str, str]] = []
+        #: What each read of the pull request answers, in turn (the last one repeats),
+        #: the branches of this repository headed by its commit, and every GET made.
+        self.pulls: list[dict[str, object]] = [pull(HEAD)]
+        self.shared: object = []
+        self.gets: list[str] = []
 
     def __call__(self, method: str, url: str, token: str, body: object) -> Reply:
         """Answer one request."""
@@ -109,8 +114,12 @@ class Api:
             if self.fail_after_verdict and body["state"] != "pending":
                 self.fail, self.fail_after_verdict = self.fail_after_verdict, ""
             return Reply(201, {})
+        if method == "GET":
+            self.gets.append(url)
         if url.endswith("/pulls/7"):
-            return Reply(200, {"head": {"sha": HEAD}})
+            return Reply(200, self.pulls.pop(0) if len(self.pulls) > 1 else self.pulls[0])
+        if url.endswith("/branches-where-head"):
+            return Reply(200, self.shared)
         if "/status?" in url:
             return Reply(200, {"statuses": self.statuses})
         nodes = [{**t, "comments": {"nodes": t["comments"], "pageInfo": {}}} for t in self.threads]
@@ -222,3 +231,86 @@ def test_a_check_name_is_sent_url_encoded() -> None:
 
     lb.Github("t", "o/r", send=api, sleep=lambda _: None).reviews(HEAD, ["Lint & Test (C++)"])
     assert sent[-1].endswith("check_name=Lint%20%26%20Test%20%28C%2B%2B%29&filter=latest")
+
+
+FORK = "stranger/r"
+OTHER = "b" * 40
+
+
+def _fork(threads: list[dict[str, Any]], head_repo: str | None = FORK, shared: int = 0) -> Api:
+    """Return the fake for a fork's pull request whose head ``shared`` branches here head."""
+    api = Api(threads, STATUS)
+    api.pulls = [pull(HEAD, head_repo)]
+    api.shared = [{"name": f"branch-{n}"} for n in range(shared)]
+    return api
+
+
+@pytest.mark.parametrize("head_repo", [FORK, None], ids=["fork", "deleted-fork"])
+def test_a_fork_whose_head_is_a_branch_head_here_gets_no_status_at_all(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str], head_repo: str | None
+) -> None:
+    """No pending and no verdict lands on the shared commit; the run says why and succeeds.
+
+    The fork's pull request has no finding threads, so unguarded it would post a success
+    over the failure the branch's own pull request earned.
+    """
+    api = _fork([], head_repo, shared=1)
+    code, out = _run(api, tmp_path)
+    assert code == 0 and api.posted == []
+    assert not out.exists() or out.read_text() == ""
+    said = capsys.readouterr().out
+    assert said.startswith("::notice title=Review labels::No status written") and "#7" in said
+
+
+@pytest.mark.parametrize("head_repo", [FORK, None], ids=["fork", "deleted-fork"])
+def test_a_fork_whose_head_no_branch_here_shares_is_checked_as_before(
+    tmp_path: Path, head_repo: str | None
+) -> None:
+    """The guard asks about the commit it then posts on, and the statuses are as today."""
+    api = _fork([_thread("accepted: fixed")], head_repo)
+    code, out = _run(api, tmp_path)
+    assert code == 0 and api.posted == [(HEAD, "pending"), (HEAD, "success")]
+    assert out.read_text() == f"sha={HEAD}\nposted=true\n"
+    assert [u for u in api.gets if "branches-where-head" in u] == [
+        f"https://api.github.com/repos/o/r/commits/{HEAD}/branches-where-head"
+    ]
+
+
+def test_a_same_repository_pull_request_costs_no_extra_read_or_write(tmp_path: Path) -> None:
+    """Exactly today's requests, in today's order: one head read, pending, then the verdict."""
+    api = Api([_thread("accepted: fixed")], STATUS)
+    api.shared = [{"name": "its-own-branch"}]  # its head is a branch head here, as always
+    assert _run(api, tmp_path)[0] == 0
+    assert api.posted == [(HEAD, "pending"), (HEAD, "success")]
+    assert [u.removeprefix("https://api.github.com/") for u in api.gets] == [
+        "repos/o/r/pulls/7",
+        f"repos/o/r/commits/{HEAD}/status?per_page=100",
+        f"repos/o/r/commits/{HEAD}/status?per_page=100",
+    ]
+
+
+@pytest.mark.parametrize("broken", ["missing", "refused", "not-a-list"])
+def test_a_guard_that_could_not_check_fails_the_run_and_never_passes(
+    tmp_path: Path, broken: str
+) -> None:
+    """Could not check is a failed run: no pending, no success, at most a failure."""
+    api = _fork([], shared=1)
+    if broken == "missing":  # the reply names no base repository to compare with
+        api.pulls = [{"head": {"sha": HEAD, "repo": {"full_name": FORK}}}]
+    elif broken == "refused":
+        api.fail = "branches-where-head"
+    else:
+        api.shared = {"message": "no"}
+    with pytest.raises(fb.FeedbackError):
+        _run(api, tmp_path)
+    assert api.posted == [("e" * 40, "failure")]
+
+
+def test_the_commit_judged_is_the_commit_written_when_the_head_moves(tmp_path: Path) -> None:
+    """The head is read once, so a push during the run cannot move the status elsewhere."""
+    api = _fork([_thread("accepted: fixed")])
+    api.pulls = [pull(HEAD, FORK), pull(OTHER, FORK)]
+    assert _run(api, tmp_path)[0] == 0
+    assert len([u for u in api.gets if u.endswith("/pulls/7")]) == 1
+    assert [u.split("/")[-2] for u in api.gets if "branches-where-head" in u] == [HEAD]
+    assert {sha for sha, _ in api.posted} == {HEAD}

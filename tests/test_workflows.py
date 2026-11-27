@@ -135,10 +135,12 @@ def test_the_review_runs_only_trusted_code_and_reads_the_pull_request_as_data() 
     assert '--trusted "$GITHUB_WORKSPACE/trusted"' in steps[-2]["run"]
 
 
-def test_the_status_is_pending_before_anything_that_can_fail() -> None:
-    first = _load("review.yml")["jobs"]["review"]["steps"][0]
-    assert first["id"] == "context" and "state=pending" in first["run"]
-    assert 'context="${PROVIDER^} review"' in first["run"]
+def test_the_status_is_pending_right_after_the_guard_and_before_anything_else() -> None:
+    guard, pending, *rest = _load("review.yml")["jobs"]["review"]["steps"]
+    assert guard["id"] == "due" and "statuses/" not in guard["run"]
+    assert "state=pending" in pending["run"] and "${PROVIDER^} review" in pending["run"]
+    # Nothing runs, and no key is used, for a head whose status may not be written.
+    assert [step["if"] for step in rest[:-1]] == ["steps.due.outputs.due == 'true'"] * 5
 
 
 def test_only_the_review_step_holds_the_key() -> None:
@@ -220,9 +222,11 @@ def test_a_push_withdraws_the_approval_without_a_key_or_a_checkout() -> None:
     assert shared["default"] == "ai-review-approved"
 
 
-def test_the_labels_check_marks_pending_first_and_reports_a_run_that_posted_nothing() -> None:
+def test_the_labels_check_posts_from_devloop_and_reports_a_run_that_posted_nothing() -> None:
     steps = _load("labels.yml")["jobs"]["labels"]["steps"]
-    assert "state=pending" in steps[0]["run"]
+    # Pending is devloop's to post, after its guard (tests/test_status_guard_workflows.py
+    # pins every step): the shell only checks the number and finds the head.
+    assert "statuses/" not in steps[0]["run"] and "PR_NUMBER must be a number" in steps[0]["run"]
     checkout = steps[1]["with"]
     assert checkout["ref"] == "${{ github.event.repository.default_branch }}"
     assert steps[-1]["if"].startswith("failure() && steps.check.outputs.posted != 'true'")
