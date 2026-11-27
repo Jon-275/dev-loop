@@ -580,6 +580,10 @@ def test_a_check_counts_only_under_its_name_from_its_own_app(
         ("MEMBER", "someone", "User", "o/r", True),
         ("COLLABORATOR", "someone", "User", "fork/r", True),
         ("NONE", "dependabot[bot]", "Bot", "o/r", True),
+        # A trusted bot's pull requests come from a branch of the repository, as the
+        # workflow account's do: the same login on a fork's head is not trusted.
+        ("NONE", "dependabot[bot]", "Bot", "fork/r", False),
+        ("NONE", "dependabot[bot]", "Bot", "", False),
         # A person cannot take a bot's name: the account must be a bot.
         ("NONE", "dependabot[bot]", "User", "fork/r", False),
         # The repository's own workflows open pull requests from a branch of it.
@@ -607,9 +611,13 @@ def test_who_is_trusted_comes_from_githubs_own_word_on_the_author(
 
 def test_a_bot_is_trusted_only_when_the_project_lists_it() -> None:
     """``gate.trusted_bots`` is the whole list: with none listed, not even Dependabot is."""
-    pull = {"author_association": "NONE", "user": {"login": "helper[bot]", "type": "Bot"}}
+    user = {"login": "helper[bot]", "type": "Bot"}
+    pull = {"author_association": "NONE", "user": user, "head": {"repo": {"full_name": "o/r"}}}
     assert gate.is_trusted(pull, "o/r", GATE.trusted_bots) is False
     assert gate.is_trusted(pull, "o/r", ("helper[bot]",)) is True
+    fork = {**pull, "head": {"repo": {"full_name": "fork/r"}}}
+    assert gate.is_trusted(fork, "o/r", ("helper[bot]",)) is False
+    assert gate.is_trusted({**pull, "head": {"repo": None}}, "o/r", ("helper[bot]",)) is False
     dependabot = {**pull, "user": {"login": "dependabot[bot]", "type": "Bot"}}
     assert gate.is_trusted(dependabot, "o/r", ()) is False
     assert gate.is_trusted({}, "o/r", GATE.trusted_bots) is False
