@@ -14,6 +14,7 @@ from typing import Any
 
 import pytest
 import yaml
+from workflow_retry import GH_API
 
 from devloop.config import load_config
 from devloop.gate import rules
@@ -28,12 +29,12 @@ PERMISSIONS = {
 }
 NUMBER = "${{ github.event.pull_request.number || inputs.pr }}"
 FIND_HEAD = (
-    'case "$PR_NUMBER" in\n'
+    GH_API + 'case "$PR_NUMBER" in\n'
     "  ''|*[!0-9]*) echo \"::error title=Merge gate::PR_NUMBER must be a number\"; exit 1 ;;\n"
     "esac\n"
     "# The head as it is now, not as the event saw it: a run that waited its turn\n"
     "# judges the current head, and a failure must be reported on that commit.\n"
-    'sha="$(gh api "repos/${GITHUB_REPOSITORY}/pulls/${PR_NUMBER}" --jq .head.sha)"\n'
+    'sha="$(gh_api "repos/${GITHUB_REPOSITORY}/pulls/${PR_NUMBER}" --jq .head.sha)"\n'
     'case "$sha" in\n'
     "  *[!0-9a-f]*|'') echo \"::error title=Merge gate::no head commit\"; exit 1 ;;\n"
     "esac\n"
@@ -95,9 +96,9 @@ GATE_JOB: dict[str, Any] = {
                 "CONTEXT": "${{ steps.gate.outputs.context || 'Merge gate' }}",
             },
             "run": (
-                'gh api "repos/${GITHUB_REPOSITORY}/statuses/${SHA}" -f state=failure'
-                ' -f "context=${CONTEXT}" -f "description=The merge gate could not run; re-run it"'
-                ' -f "target_url=${RUN_URL}"'
+                GH_API + 'gh_api "repos/${GITHUB_REPOSITORY}/statuses/${SHA}" -f state=failure \\\n'
+                '  -f "context=${CONTEXT}" -f "description=The merge gate could not run; re-run it"'
+                ' \\\n  -f "target_url=${RUN_URL}"\n'
             ),
         },
     ],

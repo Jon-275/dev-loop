@@ -217,19 +217,24 @@ def post_review(
             raise ReviewError(f"GitHub refused the review ({reply.status})")
 
 
-def previous_review(settings: Settings, provider: Provider, send: Http = http) -> Baseline | None:
-    """Return the last head this reviewer completed on this pull request, or ``None``.
+#: One review this reviewer posted: the review's id, the head it was posted on, its body.
+Summary = tuple[int, str, str]
 
-    That is the newest review by the workflows' bot carrying this reviewer's summary
-    marker, when the marker says every file was reviewed and records its base, and the
-    newest ``status_context`` status on that head is the bot's ``success``. The author
-    can write neither; anything short of all of it gives ``None``, so a full review.
+
+def own_summaries(settings: Settings, provider: Provider, send: Http = http) -> list[Summary]:
+    """Return every review the workflows' bot posted here with this reviewer's summary marker.
+
+    Each is one review this reviewer completed and posted: a review's further comment
+    batches carry no marker, and a review by any other account is left out whatever its
+    text says, so nobody but the workflow account can add to this list. Nothing an author
+    can do takes one away: they cannot delete or edit the bot's review, and a force push
+    leaves it on the pull request.
 
     Raises:
-        ReviewError: GitHub refused a listing; the check fails.
+        ReviewError: GitHub refused the listing; the check fails.
 
     """
-    own: list[tuple[int, str, str]] = []
+    own: list[Summary] = []
     for review in _get_all(
         settings, f"{_pr_url(settings, 'reviews')}?per_page=100", "reviews", send
     ):
@@ -239,6 +244,52 @@ def previous_review(settings: Settings, provider: Provider, send: Http = http) -
         if by_bot and tag and tag.group(1) == provider.summary_marker:
             rid = review.get("id")
             own.append((rid if isinstance(rid, int) else -1, str(review.get("commit_id")), body))
+    return own
+
+
+class History:
+    """One reviewer's earlier reviews of one pull request, listed at most once in a run."""
+
+    def __init__(self, settings: Settings, provider: Provider, send: Http = http) -> None:
+        """Keep what the listing needs; nothing is read until it is asked for."""
+        self._settings, self._provider, self._send = settings, provider, send
+        self._own: list[Summary] | None = None
+
+    def own(self) -> list[Summary]:
+        """Return the reviewer's posted reviews (:func:`own_summaries`), read once."""
+        if self._own is None:
+            self._own = own_summaries(self._settings, self._provider, self._send)
+        return self._own
+
+    def rounds(self) -> int:
+        """Return how many reviews this reviewer has posted on the pull request."""
+        return len(self.own())
+
+    def previous(self) -> Baseline | None:
+        """Return the last head this reviewer completed (:func:`previous_review`)."""
+        return previous_review(self._settings, self._provider, self._send, self.own())
+
+
+def previous_review(
+    settings: Settings,
+    provider: Provider,
+    send: Http = http,
+    own: Sequence[Summary] | None = None,
+) -> Baseline | None:
+    """Return the last head this reviewer completed on this pull request, or ``None``.
+
+    That is the newest review by the workflows' bot carrying this reviewer's summary
+    marker, when the marker says every file was reviewed and records its base, and the
+    newest ``status_context`` status on that head is the bot's ``success``. The author
+    can write neither; anything short of all of it gives ``None``, so a full review.
+    ``own`` is the reviewer's posted reviews when the run has already listed them.
+
+    Raises:
+        ReviewError: GitHub refused a listing; the check fails.
+
+    """
+    if own is None:
+        own = own_summaries(settings, provider, send)
     if not own:
         return None
     _, head, body = max(own, key=lambda item: item[0])

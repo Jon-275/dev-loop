@@ -47,6 +47,7 @@ to `[pr]`, `[docs]` or `[changelog]` therefore takes effect from the next pull r
 | `secret_scan` | `true` | Refuse to send a diff or a file that holds a likely secret (a provider's key format or a private-key header). The check fails and names the file, the line and the kind of key, never the text. |
 | `secret_allow` | `[]` | Globs of files the secret scan skips, for test values that only look like keys. |
 | `outside_max_chars` | `150000` | The most characters of diff and file contents an approved outside pull request may send (`gate: members`). `0`: no limit. |
+| `max_rounds` | `0` | The most reviews one reviewer gives one pull request. At the cap the next run sends nothing and its status fails and says so; a maintainer adds the `review-again` label for one more ([a cap on reviews](review.md#a-cap-on-reviews)). `0`: no cap. |
 
 ### [review.reviewers.NAME]
 
@@ -154,6 +155,7 @@ report still names it.
 |---|---|---|
 | `required_checks` | `[]` | The status checks the default branch must require, by name: exactly these, from classic branch protection and rulesets together. Empty means the project has not said, and the setting is reported as not judged. |
 | `required_checks_bound` | `true` | Every required check is bound to the app that posts it, and there is at least one. `false` accepts a check from any source. |
+| `require_pull_request` | `true` | A change reaches the default branch only through a pull request. The number of approvals is not judged. |
 | `enforce_admins` | `true` | The branch rules apply to administrators too. |
 | `allow_force_pushes` | `false` | Whether a force push to the default branch is allowed. |
 | `allow_deletions` | `false` | Whether the default branch can be deleted. |

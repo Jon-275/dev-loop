@@ -117,6 +117,8 @@ class Review:
     secret_allow: tuple[str, ...] = ()
     #: The most characters an approved outside pull request may send; 0 is no limit.
     outside_max_chars: int = 150_000
+    #: The most reviews one reviewer gives one pull request; 0 is no cap.
+    max_rounds: int = 0
 
 
 @dataclass(frozen=True)
@@ -297,6 +299,7 @@ class GitHub:
 
     required_checks: tuple[str, ...] | str = ()
     required_checks_bound: bool | str = True
+    require_pull_request: bool | str = True
     enforce_admins: bool | str = True
     allow_force_pushes: bool | str = False
     allow_deletions: bool | str = False
@@ -389,6 +392,7 @@ def parse_config(text: str) -> Config:
             "secret_scan",
             "secret_allow",
             "outside_max_chars",
+            "max_rounds",
         },
     )
     labels = _table(data, "labels", {"prefixes", "wait_for", "wait_for_checks"})
@@ -428,6 +432,9 @@ def parse_config(text: str) -> Config:
             outside_max_chars=_non_negative_int(
                 review.get("outside_max_chars", d_rev.outside_max_chars),
                 "review.outside_max_chars",
+            ),
+            max_rounds=_non_negative_int(
+                review.get("max_rounds", d_rev.max_rounds), "review.max_rounds"
             ),
         ),
         labels=Labels(
@@ -827,8 +834,8 @@ def _github(table: Mapping[str, Any]) -> GitHub:
     if methods != SKIP and (
         not isinstance(methods, list)
         or not methods
+        or not all(isinstance(m, str) and m in MERGE_METHODS for m in methods)
         or len(set(methods)) != len(methods)
-        or not all(m in MERGE_METHODS for m in methods)
     ):
         raise ConfigError(
             f'github.merge_methods must be a list of {MERGE_METHODS}, each once, or "{SKIP}"'
@@ -837,6 +844,7 @@ def _github(table: Mapping[str, Any]) -> GitHub:
         key: _switch(table, key, getattr(d, key))
         for key in (
             "required_checks_bound",
+            "require_pull_request",
             "enforce_admins",
             "allow_force_pushes",
             "allow_deletions",

@@ -14,6 +14,7 @@ different values.
 
 | Setting | Value | Why | Where it is set (API field) |
 |---|---|---|---|
+| A pull request before merging | Required, with zero required approvals. | Nothing reaches the default branch without the checks and the reviews, which run on pull requests. Zero approvals, because an author cannot approve their own pull request ([left out on purpose](#left-out-on-purpose)). | Branch rule, "Require a pull request before merging" (`GET R/branches/B/protection`: `required_pull_request_reviews` is present; ruleset rule `pull_request`) |
 | Required status checks | Few. Each one reports on every pull request. | A required check that never arrives blocks the merge for ever. A check that is skipped can count as a pass. | Branch rule, "Require status checks to pass" (`GET R/branches/B/protection`: `required_status_checks.checks[].context`) |
 | Source of each required check | The app that posts it, not "any source". | Without it, any app or token that can write a status can post the required name. | The same list: pick the app next to each check (`required_status_checks.checks[].app_id`; in a ruleset, `integration_id`) |
 | Review status | One: `Merge gate`, in place of one status per reviewer. Required on the default branch only. | One name to require. A pull request of documents only does not wait for a reviewer that never runs. The gate gives no verdict for another base branch ([merge gate](gate.md#rolling-it-out)). | The same list |
@@ -63,9 +64,12 @@ means the command could not start: no token, or a `devloop.toml` that is not val
 A branch rule counts when classic branch protection or an active ruleset on the default
 branch makes it. To say a rule is not there, both must be read. When the two disagree on
 code-owner review, the report says so on a line of its own, `code_owner_review_sources`.
+The rules bind administrators when classic protection is enforced for them, or when the
+rulesets on the branch name nobody who may bypass them.
 
-These keys are judged: `required_checks`, `required_checks_bound`, `enforce_admins`,
-`allow_force_pushes`, `allow_deletions`, `conversation_resolution`, `code_owner_review`,
+These keys are judged: `required_checks`, `required_checks_bound`, `require_pull_request`,
+`enforce_admins`, `allow_force_pushes`, `allow_deletions`, `conversation_resolution`,
+`code_owner_review`,
 `default_token_read_only`, `sha_pinning_required`, `fork_pr_approval`, `secret_scanning`,
 `push_protection`, `private_vulnerability_reporting`, `delete_branch_on_merge` and
 `merge_methods`. `required_checks` has no default: until the project lists its checks,
