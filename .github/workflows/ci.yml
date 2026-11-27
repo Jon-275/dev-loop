@@ -2,24 +2,20 @@ name: CI
 
 on:
   pull_request:
-    # labeled and unlabeled re-run the size check when pr.large_label is added or removed.
-    types: [opened, synchronize, reopened, labeled, unlabeled]
+    types: [opened, synchronize, reopened]
   push:
     branches: [main]
 
 permissions:
   contents: read
 
-# Pull request runs replace each other; every push to main keeps its own run. Label
-# changes share a group of their own, so they never cancel a run checking the code.
+# Pull request runs replace each other. Each push to main keeps its own run.
 concurrency:
-  group: ci-${{ github.event_name == 'push' && github.sha || github.ref }}${{ (github.event.action == 'labeled' || github.event.action == 'unlabeled') && '-label' || '' }}
+  group: ci-${{ github.event_name == 'push' && github.sha || github.ref }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
   check:
-    # A label change does not change the code, so the code's own run stands.
-    if: ${{ github.event.action != 'labeled' && github.event.action != 'unlabeled' }}
     runs-on: ubuntu-24.04
     timeout-minutes: 15
     steps:
@@ -38,10 +34,9 @@ jobs:
 
   # dev-loop runs its own shared workflows, installing devloop from this checkout.
   hygiene:
-    uses: ./.github/workflows/pr-hygiene.yml
+    uses: ./.github/workflows/pr-validation.yml
     permissions:
       contents: read
-      pull-requests: read
     with:
       devloop: .
 
