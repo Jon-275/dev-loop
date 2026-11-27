@@ -60,6 +60,11 @@ installs devloop and reads `devloop.toml`, the lenses and `review.feedback` from
 branch's checkout. It reads the pull request only through Git, so the pull request's own
 code never runs while the key is present.
 
+The shared workflows' own GitHub calls (reading the head, writing a status, removing the
+approval label) are tried up to three times: again after 2 seconds, then 4, on HTTP 429,
+a 5xx or a lost connection. Any other answer, such as 403, 404 or 422, is final at once.
+A call that still fails after the third try fails its step as before.
+
 After a completed review, only the pull request's own changes since then are reviewed,
 and a push that only merges the base branch is not reviewed again.
 
@@ -115,6 +120,38 @@ pull request, or raise the limit.
 The decision is made in a job that holds no key and reads only what GitHub sets on the
 event. `approval_label` and `trusted_bots` rename the label and the trusted logins; pass
 the same `approval_label` to `unapprove.yml`.
+
+### A cap on reviews
+
+Every push re-runs every reviewer. `review.max_rounds` caps how many reviews one reviewer
+gives one pull request. The default is `0`: no cap, and nothing changes.
+
+```toml
+[review]
+max_rounds = 5
+```
+
+- **What counts as a round.** One review the workflow account (`github-actions[bot]`)
+  posted on the pull request with that reviewer's summary. A run that posted no review
+  does not count: not routed, nothing new to review, or a run that failed.
+- **At the cap** the next run sends nothing to the model. The reviewer's status is
+  `failure` and reads "Not reviewed: cap of 5 reviews reached (5 done); a maintainer can
+  add the review-again label". It is never a pass and never a silent skip: the head was
+  not reviewed.
+- **One more review.** A maintainer adds the `review-again` label. That `labeled` event
+  reviews the head once, past the cap. For another, remove the label and add it again.
+  Adding a label needs triage rights, so an author from outside cannot do it.
+- **Outside pull requests** stay behind the approval gate. There the `review-again`
+  label alone starts nothing. Add it, then add the approval label: the approved review
+  passes the cap while `review-again` is on the pull request.
+- **The count cannot be reset by the author.** It is per pull request, not per head, so
+  a force push changes nothing. Only the workflow account's reviews count, so text an
+  author writes neither adds a round nor removes one. An author cannot delete or edit
+  the workflow account's reviews. A new pull request starts at zero; for an outside
+  author it waits for approval like any other.
+
+Rename the label with `review.yml`'s `again_label` input. The caller must trigger on
+`labeled`, as it does for the approval label.
 
 **To review everyone at once**, pass `gate: everyone`. That suits a private project
 whose authors are all trusted. On a public project it lets any account spend the key.

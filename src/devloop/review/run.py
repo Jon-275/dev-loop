@@ -35,6 +35,7 @@ from devloop.review.model import (
     NotSent,
     Provider,
     ReviewError,
+    RoundCapReached,
     Settings,
     ThreadMark,
     Usage,
@@ -72,6 +73,12 @@ class Policy:
     #: The most characters of diff and file contents this run may send, or None for no
     #: limit. Set for an outside pull request a maintainer approved, to bound its cost.
     max_chars: int | None = None
+    #: The most reviews this reviewer gives one pull request; 0 is no cap.
+    max_rounds: int = 0
+    #: A maintainer asked for one more review (the label below), so the cap is not applied.
+    again: bool = False
+    #: The label that asks for one more review; named in the status of a capped run.
+    again_label: str = "review-again"
 
 
 def pr_tier(paths: Sequence[str], tiers: Mapping[int, tuple[str, ...]]) -> int:
@@ -109,6 +116,7 @@ def run_review(
     previous: Callable[[], Baseline | None] | None = None,
     usage: Usage | None = None,
     is_open: Callable[[ThreadMark], bool] = lambda mark: False,
+    rounds: Callable[[], int] | None = None,
 ) -> str:
     """Review the pull request and post the result; return what the log should say.
 
@@ -116,11 +124,14 @@ def run_review(
     no review to it passes without a model request, and the status says why. Findings
     whose severity is not in ``policy.blocking`` are listed in the summary and get no
     thread. ``is_open`` says whether an own thread is unresolved (asked only for a
-    reworded title).
+    reworded title). ``rounds`` counts the reviews this reviewer has posted on the pull
+    request; it is asked only when ``policy.max_rounds`` is set.
 
     Raises:
         NotSent: a likely secret, or more than an outside pull request may send, is in
             what would be sent; nothing was sent and the check must fail.
+        RoundCapReached: the pull request has had ``policy.max_rounds`` reviews; nothing
+            was sent and the check must fail.
         IncompleteReview: some changed files could not be reviewed; the partial review,
             naming them, was posted, and the check must still fail.
         ReviewError: the review could not be completed; the check must fail.
@@ -148,6 +159,7 @@ def run_review(
     if todo.nothing_new:
         write_status(todo.nothing_new)
         return f"{todo.nothing_new}; {provider.name} posted no review."
+    _check_round_cap(provider, policy, rounds)
     increment = todo.increment
     attached = reviewable_blobs(settings.head_sha, todo.paths)[:MAX_FILES]
     contexts = {
@@ -225,6 +237,32 @@ def run_review(
         write_status(status)
         return f"{done} {status}."
     return done
+
+
+def _check_round_cap(provider: Provider, policy: Policy, rounds: Callable[[], int] | None) -> None:
+    """Refuse a review of a pull request this reviewer has reviewed ``max_rounds`` times.
+
+    It runs before anything is read for the prompt, so a refusal sends nothing. With no
+    cap (the default), or when a maintainer asked for one more review, nothing is counted.
+
+    Raises:
+        RoundCapReached: the cap is reached; the check fails and its status says so.
+
+    """
+    if not policy.max_rounds or policy.again or rounds is None:
+        return
+    done = rounds()
+    if done < policy.max_rounds:
+        return
+    label = " ".join(policy.again_label.split())
+    raise RoundCapReached(
+        f"Nothing was sent to {provider.name}: it has reviewed this pull request {done} "
+        f"time(s), and review.max_rounds is {policy.max_rounds}. This head is not reviewed "
+        f"and the check fails. For one more review, a maintainer adds the {label} label "
+        "(remove it first if it is already there).",
+        f"Not reviewed: cap of {policy.max_rounds} reviews reached ({done} done); "
+        f"a maintainer can add the {label} label",
+    )
 
 
 def _check_before_sending(

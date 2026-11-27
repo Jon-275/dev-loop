@@ -169,6 +169,14 @@ class NotSent(ReviewError):
         self.status = status
 
 
+class RoundCapReached(NotSent):
+    """The pull request has had ``review.max_rounds`` reviews by this reviewer already.
+
+    Nothing was sent. The check fails with this as its status: a pull request that was
+    not reviewed is never shown as one that passed.
+    """
+
+
 class SettingsError(ReviewError):
     """The run's environment lacks a setting; the command cannot run (exit 2)."""
 
