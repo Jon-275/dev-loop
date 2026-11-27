@@ -244,12 +244,16 @@ def evaluate(hub: GitHub, repo: str, number: int, gate: Gate, *, outputs: str = 
     return 0
 
 
-def main(root: Path, repo: str, number: int, run_url: str, env: Mapping[str, str]) -> int:
+def main(
+    root: Path, repo: str, number: int, run_url: str, env: Mapping[str, str], expected: str = ""
+) -> int:
     """Run the gate for one pull request; 2 when it cannot start, 1 when it could not check.
 
     The status's name is written to ``$GITHUB_OUTPUT`` as ``context`` before anything is
     read from GitHub, so the workflow can report a run that broke under the same name.
     Settings that cannot be read and outputs that cannot be written are start-up errors.
+    So is ``expected``, the name the calling workflow reports a broken run under, when it
+    is given and is not ``gate.context``: the two would post under different names.
     """
     outputs = env.get("GITHUB_OUTPUT", "")
     try:
@@ -259,6 +263,13 @@ def main(root: Path, repo: str, number: int, run_url: str, env: Mapping[str, str
         return 2
     except (OSError, UnicodeDecodeError):
         print(f"devloop gate: {CONFIG_FILE} could not be read", file=sys.stderr)
+        return 2
+    if expected and expected != gate.context:
+        print(
+            f"devloop gate: the workflow's context is {expected!r} but gate.context in "
+            f"{CONFIG_FILE} is {gate.context!r}; make them the same",
+            file=sys.stderr,
+        )
         return 2
     token = env.get("GITHUB_TOKEN", "")
     if not token or not _REPO.fullmatch(repo) or number <= 0:

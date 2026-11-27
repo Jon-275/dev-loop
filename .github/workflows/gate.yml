@@ -38,6 +38,14 @@ on:
         required: false
         type: string
         default: ""
+      context:
+        description: >-
+          The status's name, the same as gate.context in devloop.toml. A run that breaks
+          before devloop starts reports under it, and runs queue per name, so a second
+          gate can be reported beside another one.
+        required: false
+        type: string
+        default: Merge gate
 
 permissions:
   contents: read
@@ -57,7 +65,7 @@ jobs:
     # the newer one. A run is never stopped part-way; while one runs, only the newest
     # waiting run is kept, and it reads last.
     concurrency:
-      group: merge-gate-${{ github.repository }}-${{ github.event.pull_request.number || inputs.pr }}
+      group: merge-gate-${{ github.repository }}-${{ inputs.context }}-${{ github.event.pull_request.number || inputs.pr }}
       cancel-in-progress: false
     env:
       GITHUB_TOKEN: ${{ github.token }}
@@ -116,19 +124,25 @@ jobs:
       - name: Decide and post the status
         id: gate
         timeout-minutes: 5 # a hung step fails, so the step below still reports it
-        run: devloop gate --repo "$GITHUB_REPOSITORY" --pr "$PR_NUMBER" --run-url "$RUN_URL"
+        env:
+          GATE_CONTEXT: ${{ inputs.context }}
+        # --context: devloop refuses to start when devloop.toml names another status,
+        # so the name this workflow reports a broken run under is the name devloop posts.
+        run: >-
+          devloop gate --repo "$GITHUB_REPOSITORY" --pr "$PR_NUMBER" --run-url "$RUN_URL"
+          --context "$GATE_CONTEXT"
 
       - name: Report a run that could not check
         # devloop's exit code is not its verdict: it fails only when it could not check.
-        # devloop writes the status's name (gate.context) to its outputs before it reads
-        # anything; a run that broke before that reports under the default name.
+        # The name is this workflow's context input, which devloop has checked against
+        # gate.context, so a run that broke at any point reports under the right name.
         # It reports on the head devloop judged (its sha output, written as soon as it
         # knows the head), else on the head the first step found.
         if: >-
           failure() && (steps.gate.outputs.sha != '' || steps.head.outputs.sha != '')
         env:
           SHA: ${{ steps.gate.outputs.sha || steps.head.outputs.sha }}
-          CONTEXT: ${{ steps.gate.outputs.context || 'Merge gate' }}
+          CONTEXT: ${{ inputs.context }}
         run: |
           gh_api() {  # gh api; tried again after 2 s, then 4 s, on HTTP 429, a 5xx or a lost connection
             local try out err
