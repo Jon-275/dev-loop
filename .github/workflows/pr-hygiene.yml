@@ -13,6 +13,11 @@
 #
 # Outputs: `code` is "false" only for a pull request that changes nothing but
 # documentation; `doc_tests` names the tests a docs-only change must still run.
+#
+# A pull request does not choose its own rules: the checkout is the pull request's merge,
+# so the changes, size and changelog checks read devloop.toml from the base (HEAD^1, the
+# merge ref's first parent) with --config-from. Only a base with no devloop.toml falls
+# back to the pull request's file, and the log says so.
 name: PR hygiene
 
 on:
@@ -49,15 +54,18 @@ jobs:
           fetch-depth: 2 # the merge ref and its first parent: HEAD^1..HEAD is the PR
       - uses: astral-sh/setup-uv@1db35dd8eee11c5894872e0b383ae6c406cf738d # v10.4.0
         with:
-          python-version: "3.12"
+          version: "0.13.7"
+          python-version: "3.12.14"
       - name: Install devloop
         env:
           DEVLOOP: ${{ inputs.devloop }}
         run: uv tool install "$DEVLOOP"
       - id: changes
-        run: devloop changes --event "$GITHUB_EVENT_NAME"
+        run: devloop changes --event "$GITHUB_EVENT_NAME" --config-from HEAD^1
 
   # The rendered skills, adapters and AGENTS.md blocks match their sources.
+  # This one reads the pull request's own devloop.toml on purpose: the file must be valid,
+  # and the layout must match it, once the pull request is merged.
   doctor:
     name: devloop doctor
     if: ${{ github.event.action != 'labeled' && github.event.action != 'unlabeled' }}
@@ -69,7 +77,8 @@ jobs:
           persist-credentials: false
       - uses: astral-sh/setup-uv@1db35dd8eee11c5894872e0b383ae6c406cf738d # v10.4.0
         with:
-          python-version: "3.12"
+          version: "0.13.7"
+          python-version: "3.12.14"
       - name: Install devloop
         env:
           DEVLOOP: ${{ inputs.devloop }}
@@ -93,7 +102,8 @@ jobs:
           fetch-depth: 2
       - uses: astral-sh/setup-uv@1db35dd8eee11c5894872e0b383ae6c406cf738d # v10.4.0
         with:
-          python-version: "3.12"
+          version: "0.13.7"
+          python-version: "3.12.14"
       - name: Install devloop
         env:
           DEVLOOP: ${{ inputs.devloop }}
@@ -101,7 +111,7 @@ jobs:
       - name: Measure the pull request
         env:
           GITHUB_TOKEN: ${{ github.token }}
-        run: devloop size --event "$GITHUB_EVENT_NAME"
+        run: devloop size --event "$GITHUB_EVENT_NAME" --config-from HEAD^1
 
   # Advisory: invalid changelog fragments fail; code with no fragment gets a note.
   changelog:
@@ -118,9 +128,10 @@ jobs:
           fetch-depth: 2
       - uses: astral-sh/setup-uv@1db35dd8eee11c5894872e0b383ae6c406cf738d # v10.4.0
         with:
-          python-version: "3.12"
+          version: "0.13.7"
+          python-version: "3.12.14"
       - name: Install devloop
         env:
           DEVLOOP: ${{ inputs.devloop }}
         run: uv tool install "$DEVLOOP"
-      - run: devloop changelog check --pr
+      - run: devloop changelog check --pr --config-from HEAD^1
