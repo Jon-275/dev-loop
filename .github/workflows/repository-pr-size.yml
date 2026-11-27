@@ -1,0 +1,21 @@
+name: Repository PR size
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, labeled, unlabeled]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: repository-pr-size-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  hygiene:
+    uses: ./.github/workflows/pr-size.yml
+    permissions:
+      contents: read
+      pull-requests: read
+    with:
+      devloop: .
