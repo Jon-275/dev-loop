@@ -216,10 +216,11 @@ def lane(
             return Lane(False, False, "a kind of change the gate does not know")
         if (file.status == "renamed") != bool(file.previous):
             return Lane(False, False, "a rename and its earlier name do not agree")
-        if not all(is_document(name, gate) for name in (file.path, file.previous) if name is not None):
+        mine = [name for name in (file.path, file.previous) if name is not None]
+        if not all(is_document(name, gate) for name in mine):
             return Lane(False, False, "files other than documents change")
         if file.status != "removed" and file.mode != REGULAR:
             return Lane(False, False, "a document that is not a regular file")
-        if any(folded.get(n.casefold(), n) != n for n in (file.path, file.previous) if n is not None):
+        if any(folded.get(name.casefold(), name) != name for name in mine):
             return Lane(False, False, "a path that differs from an existing one only by case")
     return Lane(True, False, "documents only")
