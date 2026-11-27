@@ -55,10 +55,38 @@ def test_the_default_token_is_read_only_and_every_job_has_a_time_limit(path: Pat
         assert "uses" in job or "timeout-minutes" in job, name
 
 
-@pytest.mark.parametrize("name", ["pr-hygiene.yml", "main-health.yml"])
+@pytest.mark.parametrize("name", ["pr-hygiene.yml", "main-health.yml", "drift-check.yml"])
 def test_the_shared_workflows_are_called_with_a_devloop_to_install(name: str) -> None:
     devloop = _on(_load(name))["workflow_call"]["inputs"]["devloop"]
     assert devloop["required"] is True and devloop["type"] == "string"
+
+
+def test_repository_drift_does_not_emit_a_label_only_verdict() -> None:
+    """A metadata-only event cannot replace the verdict for the current code."""
+    workflow = _load("repository-drift.yml")
+    trigger = _on(workflow)
+    assert trigger == {
+        "pull_request": {
+            "branches": ["main"],
+            "types": ["opened", "reopened", "synchronize", "ready_for_review"],
+        },
+        "push": {"branches": ["main"]},
+    }
+    caller = workflow["jobs"]["drift"]
+    assert "if" not in caller
+    assert caller["uses"] == "./.github/workflows/drift-check.yml"
+    assert caller["with"] == {"devloop": "."}
+
+
+def test_repository_drift_reports_the_real_doctor_result() -> None:
+    """The dedicated job can succeed only when doctor actually succeeds."""
+    job = _load("drift-check.yml")["jobs"]["doctor"]
+    assert job["name"] == "Repository drift check"
+    assert "if" not in job and "continue-on-error" not in job
+    check = job["steps"][-1]
+    assert "if" not in check and "continue-on-error" not in check
+    assert check["env"]["DEVLOOP"] == "${{ inputs.devloop }}"
+    assert check["run"] == 'uvx --from "$DEVLOOP" devloop doctor --check'
 
 
 def test_pr_checks_read_the_merge_ref_and_its_base() -> None:

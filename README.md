@@ -57,18 +57,20 @@ Full documentation: [concepts](docs/concepts.md), [adoption](docs/adoption.md),
 
 ## In CI
 
-Three shared workflows run the checks, so every project's CI calls the same code:
+Shared workflows run the checks, so every project's CI calls the same code:
 
 - [`pr-hygiene.yml`](.github/workflows/pr-hygiene.yml): `devloop doctor --check`,
   `size`, `changelog check --pr` and `changes`. Its `code` output is `"false"` for a
   docs-only pull request, so the caller can skip its code checks.
+- [`drift-check.yml`](.github/workflows/drift-check.yml): the standalone doctor check for branch protection,
+  called separately from label events.
 - [`main-health.yml`](.github/workflows/main-health.yml): `devloop main-health`, as the
   caller's last job on every push to main.
 - [`review.yml`](.github/workflows/review.yml): `devloop review`, one job per reviewer,
   from a caller on `pull_request_target`.
 
-Each file's header shows the job to copy. [dev-loop's own CI](.github/workflows/ci.yml)
-calls the first two, and [its reviews](.github/workflows/review-trusted.yml) the third.
+See the callers for [CI](.github/workflows/ci.yml), [drift](.github/workflows/repository-drift.yml)
+and [reviews](.github/workflows/review-trusted.yml).
 
 ## What `init` writes
 

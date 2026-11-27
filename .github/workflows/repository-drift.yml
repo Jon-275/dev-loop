@@ -1,0 +1,21 @@
+name: Repository drift
+
+on:
+  pull_request:
+    branches: [main]
+    types: [opened, reopened, synchronize, ready_for_review]
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: repository-drift-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  drift:
+    uses: ./.github/workflows/drift-check.yml
+    with:
+      devloop: '.'
