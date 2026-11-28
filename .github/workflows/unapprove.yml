@@ -26,8 +26,10 @@ on:
         type: string
         default: ai-review-approved
 
-permissions:
-  contents: read
+# Nothing by default: the one job asks for exactly what it uses, so a caller that grants
+# only pull-requests: write is enough. A default of contents: read here made GitHub
+# refuse to start a caller in another repository that did not also grant it.
+permissions: {}
 
 jobs:
   unapprove:

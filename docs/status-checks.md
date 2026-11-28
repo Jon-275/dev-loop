@@ -172,7 +172,7 @@ too.
 
 See [rolling it out](gate.md#rolling-it-out).
 
-## 11. Two facts about events
+## 11. Three facts about events and calls
 
 - **`pull_request_target` runs the base branch's workflow.** A new trusted workflow does
   not run on the pull request that adds it, so it cannot report there. It first reports
@@ -183,6 +183,14 @@ See [rolling it out](gate.md#rolling-it-out).
   run post it. Otherwise every reply from an outside author is a red job.
 
 See [when the gate runs](gate.md#when-it-runs).
+- **A call to a shared workflow in another repository must grant its default
+  permissions.** If the called workflow's top-level `permissions` ask for more than the
+  calling job grants, GitHub does not start the calling workflow at all, and every job
+  in it is lost, not only the one call. Because of the first fact, the pull request that
+  introduces the call does not show it. Before merging a new call, push a throwaway
+  branch with a workflow that makes the same call with `if: false`: a run that is
+  skipped has started; a start-up failure has not.
+
 
 ## 12. Check a gate's exit code, not its filtered output
 
