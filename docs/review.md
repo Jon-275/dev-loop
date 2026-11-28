@@ -82,7 +82,7 @@ on:
 jobs:
   unapprove:
     uses: Jon-275/dev-loop/.github/workflows/unapprove.yml@<tag>
-    permissions: { pull-requests: write }
+    permissions: { contents: read, pull-requests: write }
 
   gemini:
     uses: Jon-275/dev-loop/.github/workflows/review.yml@<tag>

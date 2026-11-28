@@ -53,7 +53,8 @@ def test_checkouts_keep_no_credentials(path: Path) -> None:
 @pytest.mark.parametrize("path", FILES, ids=[p.name for p in FILES])
 def test_the_default_token_is_read_only_and_every_job_has_a_time_limit(path: Path) -> None:
     data = yaml.safe_load(path.read_text(encoding="utf-8"))
-    assert data["permissions"] == {"contents": "read"}
+    # Read-only, or nothing at all where every job asks for less than contents: read.
+    assert data["permissions"] in ({"contents": "read"}, {})
     for name, job in data["jobs"].items():
         assert "uses" in job or "timeout-minutes" in job, name
 
@@ -257,7 +258,9 @@ def test_an_outside_pull_request_here_waits_for_a_maintainer_s_label() -> None:
     assert _on(_load("review.yml"))["workflow_call"]["inputs"]["gate"]["default"] == "members"
     assert caller["jobs"]["unapprove"] == {
         "uses": "./.github/workflows/unapprove.yml",
-        "permissions": {**_load("unapprove.yml")["permissions"], "pull-requests": "write"},
+        # contents: read is more than the job needs since its default became empty. It is
+        # harmless, and it is what a caller on 0.12.0 or 0.13.0 must grant.
+        "permissions": {"contents": "read", "pull-requests": "write"},
     }
     # No keyed job waits for it: on a push the gate never reads the label, so an outside
     # pull request waits whether or not the label is still there.
@@ -289,7 +292,7 @@ def test_a_push_withdraws_the_approval_without_a_key_or_a_checkout() -> None:
     label = _on(shared)["workflow_call"]["inputs"]["approval_label"]
     review = _on(_load("review.yml"))["workflow_call"]["inputs"]["approval_label"]
     assert label["default"] == review["default"] == "ai-review-approved"
-    assert shared["permissions"] == {"contents": "read"}
+    assert shared["permissions"] == {}  # so a caller grants only what the job asks for
     assert shared["jobs"] == {
         "unapprove": {
             "name": "Withdraw approval on a new push",
@@ -399,3 +402,23 @@ def test_the_council_status_runs_the_default_branch_s_code_with_no_secrets() -> 
     post = steps[-1]["run"]
     assert "devloop council report --post" in post
     assert '[ "$code" -le 1 ] || exit "$code"' in post
+
+
+SHARED = [path for path in FILES if "workflow_call" in _on(yaml.safe_load(path.read_text()))]
+
+
+@pytest.mark.parametrize("path", SHARED, ids=[p.name for p in SHARED])
+def test_a_caller_that_grants_what_a_shared_job_asks_for_can_start_it(path: Path) -> None:
+    """A shared workflow's default asks for nothing its jobs do not ask for themselves.
+
+    GitHub refuses to start a caller in another repository whose job grants less than
+    the called workflow's default, and the whole calling workflow then fails at
+    start-up. So the default is never more than each job's own permissions: a caller
+    that copies a job's permissions has granted enough.
+    """
+    data = yaml.safe_load(path.read_text(encoding="utf-8"))
+    default = data["permissions"]
+    for name, job in data["jobs"].items():
+        asked = job.get("permissions", default)
+        for scope, level in default.items():
+            assert asked.get(scope) in (level, "write"), (path.name, name, scope)
